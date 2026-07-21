@@ -11,4 +11,6 @@ public interface GithubRepositoryRepository extends JpaRepository<GithubReposito
     Optional<GithubRepository> findByGithubRepositoryId(Long githubRepositoryId);
 
     List<GithubRepository> findByUser(User user);
+
+    long countByUser(User user);
 }

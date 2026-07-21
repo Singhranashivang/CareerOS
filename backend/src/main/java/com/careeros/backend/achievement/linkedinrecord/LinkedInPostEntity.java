@@ -1,4 +1,4 @@
-package com.careeros.backend.achievement;
+package com.careeros.backend.achievement.linkedinrecord;
 
 import com.careeros.backend.user.User;
 import jakarta.persistence.*;
@@ -7,41 +7,28 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "achievements")
+@Table(name = "linkedin_posts")
 @Getter
 @Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class Achievement {
+public class LinkedInPostEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id")
     private User user;
 
-
-    private String title;
-
+    private String headline;
 
     @Column(columnDefinition = "TEXT")
-    private String description;
-
-
-    @Column(columnDefinition = "TEXT")
-    private String evidence;
-
+    private String post;
 
     private Double confidence;
 
-
-    private String status;
-
-
-    @Column(name = "created_at")
-    private LocalDateTime createdAt;
+    private LocalDateTime generatedAt;
 }

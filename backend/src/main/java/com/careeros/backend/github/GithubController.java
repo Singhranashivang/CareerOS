@@ -37,14 +37,20 @@ public class GithubController {
         User user = userRepository.findByGithubId(92661186L)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        GithubRepository repository = githubRepositoryRepository.findAll().getFirst();
+        var repositories = githubRepositoryRepository.findByUser(user);
 
-        githubCommitService.syncCommits(
-                repository,
-                user.getEncryptedGithubAccessToken()
-        );
+        for (GithubRepository repository : repositories) {
 
-        return "Commit Test Completed";
+            System.out.println("--------------------------------");
+            System.out.println("Syncing " + repository.getFullName());
+
+            githubCommitService.syncCommits(
+                    repository,
+                    user.getEncryptedGithubAccessToken()
+            );
+        }
+
+        return "All commits synced.";
     }
 
     @GetMapping("/github/test-pullrequests")
@@ -53,12 +59,15 @@ public class GithubController {
         User user = userRepository.findByGithubId(92661186L)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        GithubRepository repository = githubRepositoryRepository.findAll().getFirst();
+        var repositories = githubRepositoryRepository.findByUser(user);
 
-        githubPullRequestService.syncPullRequests(
-                repository,
-                user.getEncryptedGithubAccessToken()
-        );
+        for (GithubRepository repository : repositories) {
+
+            githubPullRequestService.syncPullRequests(
+                    repository,
+                    user.getEncryptedGithubAccessToken()
+            );
+        }
 
         return "Pull Requests Synced";
     }

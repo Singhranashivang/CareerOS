@@ -18,42 +18,51 @@ public class GithubCommitService {
             String accessToken
     ) {
 
-        var commits = githubCommitApiService.getCommits(
-                accessToken,
-                repository.getFullName()
-        );
+        try {
 
-        System.out.println("--------------------------------");
-        System.out.println(repository.getFullName());
+            var commits = githubCommitApiService.getCommits(
+                    accessToken,
+                    repository.getFullName()
+            );
 
-        commits.forEach(commit -> {
+            System.out.println("--------------------------------");
+            System.out.println("Syncing " + repository.getFullName());
 
-            if (githubCommitRepository
-                    .findByGithubCommitSha(commit.getSha())
-                    .isPresent()) {
+            commits.forEach(commit -> {
 
-                return;
-            }
+                if (githubCommitRepository
+                        .findByGithubCommitSha(commit.getSha())
+                        .isPresent()) {
+                    return;
+                }
 
-            GithubCommit entity = GithubCommit.builder()
-                    .repository(repository)
-                    .githubCommitSha(commit.getSha())
-                    .message(commit.getCommit().getMessage())
-                    .authorName(commit.getCommit().getAuthor().getName())
-                    .authorEmail(commit.getCommit().getAuthor().getEmail())
-                    .committedAt(
-                            LocalDateTime.parse(
-                                    commit.getCommit().getAuthor().getDate()
-                                            .replace("Z", "")
-                            )
-                    )
-                    .htmlUrl(commit.getHtmlUrl())
-                    .syncedAt(LocalDateTime.now())
-                    .build();
+                GithubCommit entity = GithubCommit.builder()
+                        .repository(repository)
+                        .githubCommitSha(commit.getSha())
+                        .message(commit.getCommit().getMessage())
+                        .authorName(commit.getCommit().getAuthor().getName())
+                        .authorEmail(commit.getCommit().getAuthor().getEmail())
+                        .committedAt(
+                                LocalDateTime.parse(
+                                        commit.getCommit().getAuthor().getDate()
+                                                .replace("Z", "")
+                                )
+                        )
+                        .htmlUrl(commit.getHtmlUrl())
+                        .syncedAt(LocalDateTime.now())
+                        .build();
 
-            githubCommitRepository.save(entity);
+                githubCommitRepository.save(entity);
 
-            System.out.println("Saved: " + entity.getMessage());
-        });
+                System.out.println("Saved: " + entity.getMessage());
+            });
+
+        } catch (Exception e) {
+
+            System.out.println("--------------------------------");
+            System.out.println("Skipping repository: " + repository.getFullName());
+            System.out.println(e.getMessage());
+
+        }
     }
 }

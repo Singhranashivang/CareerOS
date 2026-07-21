@@ -3,6 +3,7 @@ package com.careeros.backend.user;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -32,4 +33,10 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    public User findByGithubId(Long githubId) {
+
+        return userRepository.findByGithubId(githubId)
+                .orElseThrow(() ->
+                        new RuntimeException("User not found"));
+    }
 }
