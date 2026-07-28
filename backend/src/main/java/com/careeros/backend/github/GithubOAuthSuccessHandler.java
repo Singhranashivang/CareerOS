@@ -56,6 +56,6 @@ public class GithubOAuthSuccessHandler implements AuthenticationSuccessHandler {
         new org.springframework.security.web.savedrequest.HttpSessionRequestCache()
                 .getRequest(request, response);
 
-        response.sendRedirect("/github/repos");
+        response.sendRedirect("/");
     }
 }

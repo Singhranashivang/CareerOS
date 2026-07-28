@@ -7,7 +7,14 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "github_repositories")
+@Table(
+        name = "github_repositories",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_repo_user_github_id",
+                columnNames = {"user_id", "github_repository_id"}
+        )
+)
+
 @Getter
 @Setter
 @NoArgsConstructor
@@ -23,7 +30,7 @@ public class GithubRepository {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "github_repository_id", nullable = false, unique = true)
+    @Column(name = "github_repository_id", nullable = false)
     private Long githubRepositoryId;
 
     @Column(nullable = false)

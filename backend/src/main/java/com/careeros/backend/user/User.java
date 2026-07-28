@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
-
+import com.fasterxml.jackson.annotation.JsonIgnore;
 @Entity
 @Table(name = "users")
 @Getter
@@ -33,14 +33,16 @@ public class User {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
-    @Column(name = "github_access_token", nullable = false)
-    private String encryptedGithubAccessToken;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    @Column(name = "github_access_token", nullable = false)
+    @JsonIgnore
+    private String encryptedGithubAccessToken;
 
     @PrePersist
     protected void onCreate() {

@@ -2,73 +2,56 @@ package com.careeros.backend.github;
 
 import com.careeros.backend.githubcommit.GithubCommitService;
 import com.careeros.backend.githubpullrequest.GithubPullRequestService;
+import com.careeros.backend.security.CurrentUserService;
 import com.careeros.backend.user.User;
-import com.careeros.backend.user.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@RequestMapping("/github")
 @RequiredArgsConstructor
+@Slf4j
 public class GithubController {
 
-    private final UserRepository userRepository;
+    private final CurrentUserService currentUserService;
     private final GithubRepositoryService githubRepositoryService;
     private final GithubRepositoryRepository githubRepositoryRepository;
     private final GithubCommitService githubCommitService;
     private final GithubPullRequestService githubPullRequestService;
 
-    @GetMapping("/github/repos")
-    public String getRepositories() {
-
-        System.out.println("GithubController HIT");
-
-        User user = userRepository.findByGithubId(92661186L)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        githubRepositoryService.syncRepositories(user);
-
-        return "Repositories Synced";
+    @PostMapping("/sync/repositories")
+    public String syncRepositories() {
+        User user = currentUserService.require();
+        int count = githubRepositoryService.syncRepositories(user);
+        return "Synced " + count + " repositories";
     }
 
-    @GetMapping("/github/test-commits")
-    public String testCommits() {
-
-        User user = userRepository.findByGithubId(92661186L)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+    @PostMapping("/sync/commits")
+    public String syncCommits() {
+        User user = currentUserService.require();
 
         var repositories = githubRepositoryRepository.findByUser(user);
-
         for (GithubRepository repository : repositories) {
-
-            System.out.println("--------------------------------");
-            System.out.println("Syncing " + repository.getFullName());
-
+            log.info("Syncing commits for {}", repository.getFullName());
             githubCommitService.syncCommits(
-                    repository,
-                    user.getEncryptedGithubAccessToken()
-            );
+                    repository, user.getEncryptedGithubAccessToken());
         }
-
-        return "All commits synced.";
+        return "Synced commits for " + repositories.size() + " repositories";
     }
 
-    @GetMapping("/github/test-pullrequests")
-    public String testPullRequests() {
-
-        User user = userRepository.findByGithubId(92661186L)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+    @PostMapping("/sync/pull-requests")
+    public String syncPullRequests() {
+        User user = currentUserService.require();
 
         var repositories = githubRepositoryRepository.findByUser(user);
-
         for (GithubRepository repository : repositories) {
-
+            log.info("Syncing pull requests for {}", repository.getFullName());
             githubPullRequestService.syncPullRequests(
-                    repository,
-                    user.getEncryptedGithubAccessToken()
-            );
+                    repository, user.getEncryptedGithubAccessToken());
         }
-
-        return "Pull Requests Synced";
+        return "Synced pull requests for " + repositories.size() + " repositories";
     }
 }

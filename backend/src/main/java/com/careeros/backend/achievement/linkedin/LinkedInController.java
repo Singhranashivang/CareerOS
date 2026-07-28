@@ -1,7 +1,7 @@
 package com.careeros.backend.achievement.linkedin;
 
+import com.careeros.backend.security.CurrentUserService;
 import com.careeros.backend.user.User;
-import com.careeros.backend.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,15 +13,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class LinkedInController {
 
     private final LinkedInPostService linkedInPostService;
-    private final UserRepository userRepository;
+    private final CurrentUserService currentUserService;
 
     @GetMapping("/linkedin")
     public LinkedInPost generateLinkedInPost() {
-
-        User user = userRepository.findByGithubId(92661186L)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
+        User user = currentUserService.require();
         return linkedInPostService.generate(user);
     }
-
 }
