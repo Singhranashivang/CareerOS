@@ -9,6 +9,8 @@ public interface GithubRepositoryRepository extends JpaRepository<GithubReposito
 
     Optional<GithubRepository> findByUserAndGithubRepositoryId(User user, Long githubRepositoryId);
 
+    Optional<GithubRepository> findByIdAndUser(Long id, User user);
+
     List<GithubRepository> findByUser(User user);
 
     List<GithubRepository> findByUserOrderByUpdatedAtGithubDesc(User user);

@@ -7,6 +7,7 @@ import com.careeros.backend.security.CurrentUserService;
 import com.careeros.backend.user.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import com.careeros.backend.github.GithubRepositoryService;
 
 @RestController
 @RequestMapping("/knowledge")
@@ -18,6 +19,8 @@ public class RepositoryKnowledgeController {
 
     private final GithubRepositoryRepository githubRepositoryRepository;
     private final CurrentUserService currentUserService;
+    private final GithubRepositoryService githubRepositoryService;
+
 
     @GetMapping("/generate")
     public RepositoryKnowledge generate() {
@@ -36,8 +39,11 @@ public class RepositoryKnowledgeController {
     @GetMapping("/{repositoryId}")
     public RepositoryKnowledgeEntity getKnowledge(@PathVariable Long repositoryId) {
 
+        User user = currentUserService.require();
+        var repository = githubRepositoryService.requireOwned(user, repositoryId);
+
         return repositoryKnowledgePersistenceService
-                .findByRepositoryId(repositoryId)
+                .findByRepository(repository)
                 .orElseThrow(() -> new RuntimeException("Knowledge not found"));
     }
 }

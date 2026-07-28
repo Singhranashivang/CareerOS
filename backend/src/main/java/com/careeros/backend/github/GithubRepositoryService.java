@@ -6,7 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import org.springframework.security.access.AccessDeniedException;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -25,6 +25,19 @@ public class GithubRepositoryService {
     @Transactional(readOnly = true)
     public List<GithubRepository> findAllForUser(User user) {
         return githubRepositoryRepository.findByUserOrderByUpdatedAtGithubDesc(user);
+    }
+
+    /**
+     * Loads a repository the given user owns.
+     *
+     * Throws the same exception whether the repository is missing or owned by
+     * someone else — distinguishing them would let a caller enumerate which
+     * repository ids exist.
+     */
+    @Transactional(readOnly = true)
+    public GithubRepository requireOwned(User user, Long repositoryId) {
+        return githubRepositoryRepository.findByIdAndUser(repositoryId, user)
+                .orElseThrow(() -> new AccessDeniedException("Repository not found"));
     }
 
     @Transactional

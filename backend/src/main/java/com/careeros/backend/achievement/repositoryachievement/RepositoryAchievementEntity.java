@@ -5,7 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
-
+import com.fasterxml.jackson.annotation.JsonIgnore;
 @Entity
 @Table(name = "repository_achievements")
 @Getter
@@ -21,6 +21,7 @@ public class RepositoryAchievementEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "repository_id")
+    @JsonIgnore
     private GithubRepository repository;
 
     private String title;
