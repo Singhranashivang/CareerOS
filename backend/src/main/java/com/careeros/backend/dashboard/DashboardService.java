@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -31,6 +32,7 @@ public class DashboardService {
     private final GithubCommitRepository commitRepository;
     private final GithubPullRequestRepository pullRequestRepository;
 
+    @Transactional(readOnly = true)
     public DashboardResponse getDashboard(User user) {
 
         List<GithubRepository> repositories =

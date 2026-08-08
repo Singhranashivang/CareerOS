@@ -20,6 +20,8 @@ public class Evidence {
 
     private String readme;
 
+    private CodeStats codeStats;
+
     private List<String> dependencies;
 
     private List<Feature> features;

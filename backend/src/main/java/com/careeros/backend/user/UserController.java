@@ -1,23 +1,21 @@
-package com.careeros.backend.achievement.timeline;
+package com.careeros.backend.user;
 
 import com.careeros.backend.security.CurrentUserService;
+import com.careeros.backend.user.dto.CurrentUserResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-
 @RestController
-@RequestMapping("/api/achievements")
+@RequestMapping("/api/me")
 @RequiredArgsConstructor
-public class AchievementTimelineController {
+public class UserController {
 
-    private final AchievementTimelineService achievementTimelineService;
     private final CurrentUserService currentUserService;
 
     @GetMapping
-    public List<AchievementTimelineResponse> timeline() {
-        return achievementTimelineService.timeline(currentUserService.require());
+    public CurrentUserResponse me() {
+        return CurrentUserResponse.from(currentUserService.require());
     }
 }

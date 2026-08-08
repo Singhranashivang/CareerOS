@@ -26,6 +26,7 @@ public class EvidenceBuilder {
     private final FileAnalyzer fileAnalyzer;
     private final ChangedFileAnalyzer changedFileAnalyzer;
     private final TechnologyExtractor technologyExtractor;
+    private final CodeStatsFetcher codeStatsFetcher;
 
     public Evidence build(
             GithubRepository repository,
@@ -44,7 +45,7 @@ public class EvidenceBuilder {
 
         List<Feature> features = featureExtractor.extract(commits);
 
-        System.out.println("\n====== EXTRACTED FEATURES ======");
+
 
         for (Feature feature : features) {
             System.out.println(feature.getName());
@@ -54,7 +55,6 @@ public class EvidenceBuilder {
             }
         }
 
-        System.out.println("===============================\n");
 
         List<String> prTitles = pullRequests.stream()
                 .map(GithubPullRequest::getTitle)
@@ -70,22 +70,21 @@ public class EvidenceBuilder {
         List<String> repositoryFeatures =
                 fileAnalyzer.analyze(repositoryTree);
 
-        System.out.println("\n======= FILE ANALYSIS =======");
+
 
         repositoryFeatures.forEach(System.out::println);
 
-        System.out.println("=============================\n");
+
 
         List<String> changedFiles = changedFilesFetcher.fetch(repository);
 
         List<String> changedFileInsights =
                 changedFileAnalyzer.analyze(changedFiles);
 
-        System.out.println("\n====== CHANGED FILE ANALYSIS ======");
 
         changedFileInsights.forEach(System.out::println);
 
-        System.out.println("===================================\n");
+
 
         List<String> technologies = new ArrayList<>();
 
@@ -109,11 +108,11 @@ public class EvidenceBuilder {
                 .toList();
 
 
-        System.out.println("\n====== TECHNOLOGIES ======");
 
         technologies.forEach(System.out::println);
 
-        System.out.println("==========================\n");
+
+        CodeStats codeStats = codeStatsFetcher.fetch(repository, commits);
 
         return Evidence.builder()
                 .repositoryName(repository.getName())
@@ -126,6 +125,7 @@ public class EvidenceBuilder {
                 .pullRequestTitles(prTitles)
                 .repositoryTree(repositoryTree)
                 .changedFiles(changedFiles)
+                .codeStats(codeStats)
                 .technologies(technologies)
                 .changedFileInsights(changedFileInsights)
                 .build();

@@ -1,4 +1,4 @@
-package com.careeros.backend.achievement.timeline;
+package com.careeros.backend.achievement.linkedinrecord;
 
 import com.careeros.backend.security.CurrentUserService;
 import lombok.RequiredArgsConstructor;
@@ -9,15 +9,16 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/achievements")
+@RequestMapping("/api/content")
 @RequiredArgsConstructor
-public class AchievementTimelineController {
+public class LinkedInRecordController {
 
-    private final AchievementTimelineService achievementTimelineService;
+    private final LinkedInPostRepository linkedInPostRepository;
     private final CurrentUserService currentUserService;
 
     @GetMapping
-    public List<AchievementTimelineResponse> timeline() {
-        return achievementTimelineService.timeline(currentUserService.require());
+    public List<LinkedInPostEntity> list() {
+        return linkedInPostRepository
+                .findByUserOrderByGeneratedAtDesc(currentUserService.require());
     }
 }

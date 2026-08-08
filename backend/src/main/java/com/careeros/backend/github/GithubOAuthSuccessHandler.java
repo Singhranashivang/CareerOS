@@ -5,6 +5,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
@@ -21,6 +22,9 @@ public class GithubOAuthSuccessHandler implements AuthenticationSuccessHandler {
 
     private final UserService userService;
     private final OAuth2AuthorizedClientService authorizedClientService;
+
+    @Value("${app.frontend-url}")
+    private String frontendUrl;
 
     @Override
     public void onAuthenticationSuccess(
@@ -53,9 +57,6 @@ public class GithubOAuthSuccessHandler implements AuthenticationSuccessHandler {
                 accessToken
         );
 
-        new org.springframework.security.web.savedrequest.HttpSessionRequestCache()
-                .getRequest(request, response);
-
-        response.sendRedirect("/");
+        response.sendRedirect(frontendUrl + "/dashboard");
     }
 }

@@ -1,7 +1,9 @@
 package com.careeros.backend.achievement.record;
 
 import com.careeros.backend.achievement.engine.AchievementType;
+import com.careeros.backend.github.GithubRepository;
 import com.careeros.backend.user.User;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -20,10 +22,25 @@ public class AchievementEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(optional = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id")
+    @JsonIgnore
     private User user;
 
-    private String repository;
+    /** Null for sources that aren't a repository (Jira, Notion, cross-repo). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "repository_id")
+    @JsonIgnore
+    private GithubRepository repository;
+
+    /** Denormalised label; survives repository deletion. */
+    @Column(name = "repository_name")
+    private String repositoryName;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    @Builder.Default
+    private AchievementSource source = AchievementSource.GITHUB;
 
     @Enumerated(EnumType.STRING)
     private AchievementType type;
@@ -32,6 +49,21 @@ public class AchievementEntity {
 
     @Column(columnDefinition = "TEXT")
     private String summary;
+
+    @Column(columnDefinition = "TEXT")
+    private String resumeBullet;
+
+    @Column(columnDefinition = "TEXT")
+    private String starSituation;
+
+    @Column(columnDefinition = "TEXT")
+    private String starTask;
+
+    @Column(columnDefinition = "TEXT")
+    private String starAction;
+
+    @Column(columnDefinition = "TEXT")
+    private String starResult;
 
     @Column(columnDefinition = "TEXT")
     private String evidenceJson;

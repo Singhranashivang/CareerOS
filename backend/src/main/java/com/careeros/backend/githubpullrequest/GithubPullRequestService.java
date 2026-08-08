@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-
+import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class GithubPullRequestService {
@@ -13,7 +13,7 @@ public class GithubPullRequestService {
     private final GithubPullRequestRepository githubPullRequestRepository;
     private final GithubPullRequestApiService githubPullRequestApiService;
 
-
+    @Transactional
     public void syncPullRequests(
             GithubRepository repository,
             String accessToken

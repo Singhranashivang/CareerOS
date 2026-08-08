@@ -1,4 +1,4 @@
-package com.careeros.backend.achievement.timeline;
+package com.careeros.backend.achievement.weeklyrecord;
 
 import com.careeros.backend.security.CurrentUserService;
 import lombok.RequiredArgsConstructor;
@@ -9,15 +9,16 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/achievements")
+@RequestMapping("/api/weekly")
 @RequiredArgsConstructor
-public class AchievementTimelineController {
+public class WeeklyRecordController {
 
-    private final AchievementTimelineService achievementTimelineService;
+    private final WeeklyAchievementRepository weeklyAchievementRepository;
     private final CurrentUserService currentUserService;
 
     @GetMapping
-    public List<AchievementTimelineResponse> timeline() {
-        return achievementTimelineService.timeline(currentUserService.require());
+    public List<WeeklyAchievementEntity> list() {
+        return weeklyAchievementRepository
+                .findByUserOrderByGeneratedAtDesc(currentUserService.require());
     }
 }

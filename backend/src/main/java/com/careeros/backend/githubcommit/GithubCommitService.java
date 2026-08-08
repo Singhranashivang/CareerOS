@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-
+import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class GithubCommitService {
@@ -13,6 +13,7 @@ public class GithubCommitService {
     private final GithubCommitRepository githubCommitRepository;
     private final GithubCommitApiService githubCommitApiService;
 
+    @Transactional
     public void syncCommits(
             GithubRepository repository,
             String accessToken

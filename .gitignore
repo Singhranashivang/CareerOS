@@ -1,0 +1,27 @@
+# Build
+target/
+build/
+out/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Env & secrets
+.env
+.env.local
+*.local.yml
+application-local.yml
+application-secrets.properties
+
+# Node (frontend)
+node_modules/
+.next/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Agent state
+.claude-flow/

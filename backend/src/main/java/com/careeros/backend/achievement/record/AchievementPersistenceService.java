@@ -4,26 +4,35 @@ import com.careeros.backend.achievement.engine.Achievement;
 import com.careeros.backend.user.User;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
+@Slf4j
 public class AchievementPersistenceService {
 
     private final AchievementRepository achievementRepository;
 
     private final ObjectMapper objectMapper;
 
+    /**
+     * Saves an achievement produced by the weekly pipeline, which knows the
+     * repository only by name. repository stays null in that case.
+     */
     public void save(User user, Achievement achievement) {
 
         try {
 
             AchievementEntity entity = AchievementEntity.builder()
                     .user(user)
-                    .repository(achievement.getRepository())
+                    .repositoryName(achievement.getRepository())
+                    .source(AchievementSource.GITHUB)
                     .type(achievement.getType())
                     .title(achievement.getTitle())
                     .summary(achievement.getSummary())
@@ -41,25 +50,35 @@ public class AchievementPersistenceService {
                     .generatedAt(LocalDateTime.now())
                     .build();
 
-            System.out.println("Saving achievement:");
-            System.out.println("Title      = " + achievement.getTitle());
-            System.out.println("Repository = " + achievement.getRepository());
-            System.out.println("User ID    = " + user.getId());
+            log.debug("Saving achievement '{}' for repository {} (user {})",
+                    achievement.getTitle(),
+                    achievement.getRepository(),
+                    user.getId());
 
             achievementRepository.save(entity);
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to save achievement", e);
         }
-
     }
 
+    /** Used by the generator, which has the full repository entity. */
+    public AchievementEntity saveEntity(AchievementEntity entity) {
+        return achievementRepository.save(entity);
+    }
+
+    @Transactional(readOnly = true)
     public List<AchievementEntity> findByUser(User user) {
         return achievementRepository.findByUser(user);
     }
 
-    public long count() {
-        return achievementRepository.count();
+    @Transactional(readOnly = true)
+    public List<AchievementEntity> findByUserNewestFirst(User user) {
+        return achievementRepository.findByUserOrderByGeneratedAtDesc(user);
     }
 
+    @Transactional(readOnly = true)
+    public long countForUser(User user) {
+        return achievementRepository.countByUser(user);
+    }
 }

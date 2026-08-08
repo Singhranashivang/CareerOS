@@ -1,16 +1,23 @@
 package com.careeros.backend.github;
 
+import com.careeros.backend.achievement.record.AchievementRepository;
 import com.careeros.backend.github.dto.GithubRepositoryResponse;
+import com.careeros.backend.github.dto.RepositoryCountProjection;
+import com.careeros.backend.github.dto.RepositoryResponse;
+import com.careeros.backend.githubcommit.GithubCommitRepository;
+import com.careeros.backend.repositoryknowledge.RepositoryKnowledgeRepository;
 import com.careeros.backend.user.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.security.access.AccessDeniedException;
+
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -21,19 +28,38 @@ public class GithubRepositoryService {
 
     private final GithubRepositoryRepository githubRepositoryRepository;
     private final GithubApiService githubApiService;
+    private final GithubCommitRepository githubCommitRepository;
+    private final AchievementRepository achievementRepository;
+    private final RepositoryKnowledgeRepository repositoryKnowledgeRepository;
 
     @Transactional(readOnly = true)
-    public List<GithubRepository> findAllForUser(User user) {
-        return githubRepositoryRepository.findByUserOrderByUpdatedAtGithubDesc(user);
+    public List<RepositoryResponse> listForUser(User user) {
+
+        var repositories =
+                githubRepositoryRepository.findByUserOrderByUpdatedAtGithubDesc(user);
+
+        Map<Long, Long> commits =
+                toMap(githubCommitRepository.countPerRepository(user));
+        Map<Long, Long> achievements =
+                toMap(achievementRepository.countPerRepository(user));
+        Set<Long> analyzed =
+                repositoryKnowledgeRepository.findAnalyzedRepositoryIds(user);
+
+        return repositories.stream()
+                .map(r -> RepositoryResponse.from(
+                        r,
+                        analyzed.contains(r.getId()),
+                        achievements.getOrDefault(r.getId(), 0L).intValue(),
+                        commits.getOrDefault(r.getId(), 0L).intValue()))
+                .toList();
     }
 
-    /**
-     * Loads a repository the given user owns.
-     *
-     * Throws the same exception whether the repository is missing or owned by
-     * someone else — distinguishing them would let a caller enumerate which
-     * repository ids exist.
-     */
+    private static Map<Long, Long> toMap(List<RepositoryCountProjection> rows) {
+        return rows.stream().collect(Collectors.toMap(
+                RepositoryCountProjection::getRepositoryId,
+                RepositoryCountProjection::getTotal));
+    }
+
     @Transactional(readOnly = true)
     public GithubRepository requireOwned(User user, Long repositoryId) {
         return githubRepositoryRepository.findByIdAndUser(repositoryId, user)

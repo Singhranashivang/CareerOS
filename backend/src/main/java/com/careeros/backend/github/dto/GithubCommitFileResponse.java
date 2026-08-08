@@ -8,5 +8,10 @@ import lombok.Setter;
 public class GithubCommitFileResponse {
 
     private String filename;
+    private int additions;
+    private int deletions;
+    private int changes;
 
+    /** added, modified, removed, renamed */
+    private String status;
 }

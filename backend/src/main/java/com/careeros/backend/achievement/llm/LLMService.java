@@ -3,6 +3,7 @@ package com.careeros.backend.achievement.llm;
 import com.careeros.backend.achievement.llm.dto.OllamaRequest;
 import com.careeros.backend.achievement.llm.dto.OllamaResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -12,10 +13,13 @@ public class LLMService {
 
     private final RestClient restClient;
 
+    @Value("${app.llm.model}")
+    private String model;
+
     public String generate(String prompt) {
 
         OllamaRequest request = OllamaRequest.builder()
-                .model("qwen3:8b")
+                .model(model)
                 .prompt(prompt)
                 .stream(false)
                 .format("json")
