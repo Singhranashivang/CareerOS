@@ -44,17 +44,33 @@ public class CodeStatsFetcher {
                 .sorted(Comparator.comparing(GithubCommit::getCommittedAt))
                 .toList();
 
+        // Every commit could have a null date; the span calculation below indexes
+        // into this list unconditionally.
+        if (ordered.isEmpty()) {
+            return CodeStats.builder()
+                    .commitCount(0)
+                    .areasTouched(List.of())
+                    .build();
+        }
+
         List<GithubCommit> sampled = ordered.size() <= MAX_COMMITS
                 ? ordered
                 : ordered.subList(ordered.size() - MAX_COMMITS, ordered.size());
 
-        int added = 0, deleted = 0, testFiles = 0, newFiles = 0;
+        int added = 0, deleted = 0, testFiles = 0, newFiles = 0, skipped = 0;
         Set<String> files = new HashSet<>();
         Set<String> areas = new HashSet<>();
 
         for (GithubCommit commit : sampled) {
             for (GithubCommitFileResponse file : githubApiService.getCommitFileStats(
                     owner, repo, commit.getGithubCommitSha(), token)) {
+
+                // A vendored tree or a lockfile is churn, not work. Counting it
+                // let a 35-line project measure as 1,265 lines.
+                if (GeneratedFilePaths.isGenerated(file.getFilename())) {
+                    skipped++;
+                    continue;
+                }
 
                 added += file.getAdditions();
                 deleted += file.getDeletions();
@@ -67,28 +83,33 @@ public class CodeStatsFetcher {
             }
         }
 
-        long spanDays = Duration.between(
+        Duration span = Duration.between(
                 ordered.get(0).getCommittedAt(),
                 ordered.get(ordered.size() - 1).getCommittedAt()
-        ).toDays();
+        );
 
         CodeStats stats = CodeStats.builder()
                 .commitCount(ordered.size())
+                .sampledCommits(sampled.size())
+                .generatedFilesSkipped(skipped)
                 .filesTouched(files.size())
                 .linesAdded(added)
                 .linesDeleted(deleted)
                 .testFilesTouched(testFiles)
                 .newFilesCreated(newFiles)
                 .areasTouched(areas.stream().sorted().limit(8).toList())
-                .spanDays(spanDays)
+                .spanDays(span.toDays())
+                .spanMinutes(span.toMinutes())
                 .firstCommit(ordered.get(0).getCommittedAt().toLocalDate().toString())
                 .lastCommit(ordered.get(ordered.size() - 1).getCommittedAt().toLocalDate().toString())
                 .build();
 
-        log.info("{}: {} commits, +{}/-{} lines across {} files over {} days",
-                repository.getName(), stats.getCommitCount(),
+        log.info("{}: {} commits ({} sampled), +{}/-{} authored lines across {} files "
+                        + "over {} days, {} generated files skipped",
+                repository.getName(), stats.getCommitCount(), stats.getSampledCommits(),
                 stats.getLinesAdded(), stats.getLinesDeleted(),
-                stats.getFilesTouched(), stats.getSpanDays());
+                stats.getFilesTouched(), stats.getSpanDays(),
+                stats.getGeneratedFilesSkipped());
 
         return stats;
     }
