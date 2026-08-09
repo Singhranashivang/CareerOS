@@ -32,6 +32,12 @@ public class ScheduledPostService {
     private final ScheduledPostRepository scheduledPostRepository;
     private final AchievementRepository achievementRepository;
 
+
+    /**
+     * Called from PostPublisher only. Must not be invoked from within this class —
+     * self-invocation bypasses the Spring proxy, so readOnly would silently not apply.
+     */
+
     @Transactional(readOnly = true)
     public List<ScheduledPostResponse> listForUser(User user) {
         return scheduledPostRepository.findByUserOrderByScheduledForDesc(user)
@@ -106,15 +112,22 @@ public class ScheduledPostService {
             post.setStatus(PostStatus.SCHEDULED);
         }
 
-        requireValidSchedule(post.getStatus(), post.getScheduledFor());
+        // Only when the caller is actually changing the time. Validating always
+        // would reject a body-only edit on a post whose slot has already passed.
+        if (request.scheduledFor() != null) {
+            requireValidSchedule(post.getStatus(), post.getScheduledFor());
+        }
         return ScheduledPostResponse.from(post);
     }
 
     @Transactional
     public void cancel(User user, Long id) {
         ScheduledPost post = requireOwned(user, id);
-        if (post.getStatus() == PostStatus.POSTED) {
-            throw badRequest("Cannot cancel a post that is already published");
+        // PUBLISHING is mid-flight: the worker holds it and will post regardless,
+        // so accepting the cancel would be a lie.
+        if (post.getStatus() == PostStatus.POSTED
+                || post.getStatus() == PostStatus.PUBLISHING) {
+            throw badRequest("Cannot cancel a post that is " + post.getStatus());
         }
         post.setStatus(PostStatus.CANCELLED);
     }
@@ -142,12 +155,16 @@ public class ScheduledPostService {
 
     @Transactional
     public void markPosted(Long id, String externalPostId) {
-        loadForPublish(id).recordSuccess(externalPostId);
+        scheduledPostRepository.findById(id)
+                .orElseThrow(() -> new IllegalStateException("Claimed post vanished: " + id))
+                .recordSuccess(externalPostId);
     }
 
     @Transactional
     public void markFailed(Long id, String reason, int maxAttempts) {
-        loadForPublish(id).recordFailure(reason, maxAttempts);
+        scheduledPostRepository.findById(id)
+                .orElseThrow(() -> new IllegalStateException("Claimed post vanished: " + id))
+                .recordFailure(reason, maxAttempts);
     }
 
     // ---------------------------------------------------------------
