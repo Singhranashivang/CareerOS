@@ -25,7 +25,10 @@ public class CodeStatsFetcher {
 
     private final GithubApiService githubApiService;
 
-    public CodeStats fetch(GithubRepository repository, List<GithubCommit> commits) {
+    /** Token passed in; the repository is detached and its user is lazy. */
+    public CodeStats fetch(GithubRepository repository,
+                           List<GithubCommit> commits,
+                           String accessToken) {
 
         if (commits == null || commits.isEmpty()) {
             return CodeStats.builder().commitCount(0).areasTouched(List.of()).build();
@@ -34,7 +37,7 @@ public class CodeStatsFetcher {
         String[] parts = repository.getFullName().split("/");
         String owner = parts[0];
         String repo = parts[1];
-        String token = repository.getUser().getEncryptedGithubAccessToken();
+        String token = accessToken;
 
         List<GithubCommit> ordered = commits.stream()
                 .filter(c -> c.getCommittedAt() != null)

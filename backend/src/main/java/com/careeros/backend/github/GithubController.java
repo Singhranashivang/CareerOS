@@ -44,12 +44,22 @@ public class GithubController {
         User user = currentUserService.require();
 
         var repositories = githubRepositoryRepository.findByUser(user);
+
+        // The owner id comes from the attached User here; the repository
+        // entities are detached, so their lazy user cannot be dereferenced.
+        int saved = 0;
         for (GithubRepository repository : repositories) {
             log.info("Syncing commits for {}", repository.getFullName());
-            githubCommitService.syncCommits(
-                    repository, user.getEncryptedGithubAccessToken());
+            saved += githubCommitService.syncCommits(
+                    repository,
+                    user.getGithubId(),
+                    user.getEncryptedGithubAccessToken());
         }
-        return "Synced commits for " + repositories.size() + " repositories";
+
+        // Reports commits, not repositories. The old message printed "30" while
+        // saving nothing at all.
+        return "Synced " + saved + " commits across "
+                + repositories.size() + " repositories";
     }
 
     @PostMapping("/sync/pull-requests")

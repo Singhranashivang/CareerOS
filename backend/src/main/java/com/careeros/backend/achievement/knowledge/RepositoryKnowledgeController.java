@@ -32,7 +32,8 @@ public class RepositoryKnowledgeController {
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("No repositories synced yet"));
 
-        return repositoryKnowledgeService.generate(repository);
+        return repositoryKnowledgeService.generate(
+                repository, user.getEncryptedGithubAccessToken());
     }
 
     // Step 7 adds the ownership check here.

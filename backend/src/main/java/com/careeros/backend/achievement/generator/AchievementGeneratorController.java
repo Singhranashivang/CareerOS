@@ -18,6 +18,7 @@ public class AchievementGeneratorController {
     public AchievementOutput analyze(@PathVariable Long repositoryId) {
         var user = currentUserService.require();
         var repository = githubRepositoryService.requireOwned(user, repositoryId);
-        return achievementGeneratorService.generate(repository);
+        return achievementGeneratorService.generate(
+                repository, user.getEncryptedGithubAccessToken());
     }
 }

@@ -32,8 +32,4 @@ public class CodeStats {
 
     private String firstCommit;
     private String lastCommit;
-
-    public boolean isThin() {
-        return commitCount < 3 || linesAdded < 50;
-    }
 }

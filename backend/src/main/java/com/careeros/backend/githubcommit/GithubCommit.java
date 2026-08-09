@@ -35,6 +35,13 @@ public class GithubCommit {
     @Column(name = "author_email")
     private String authorEmail;
 
+    /** GitHub account id of the author. The only field safe to key identity on. */
+    @Column(name = "author_github_id")
+    private Long authorGithubId;
+
+    @Column(name = "author_github_login")
+    private String authorGithubLogin;
+
     @Column(name = "committed_at", nullable = false)
     private LocalDateTime committedAt;
 

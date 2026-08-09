@@ -16,13 +16,14 @@ public class ChangedFilesFetcher {
     private final GithubApiService githubApiService;
     private final GithubCommitRepository githubCommitRepository;
 
-    public List<String> fetch(GithubRepository repository) {
+    /** Token passed in; the repository is detached and its user is lazy. */
+    public List<String> fetch(GithubRepository repository, String accessToken) {
 
         String[] parts = repository.getFullName().split("/");
 
         String owner = parts[0];
         String repo = parts[1];
-        String token = repository.getUser().getEncryptedGithubAccessToken();
+        String token = accessToken;
 
         return githubCommitRepository.findByRepository(repository)
                 .stream()

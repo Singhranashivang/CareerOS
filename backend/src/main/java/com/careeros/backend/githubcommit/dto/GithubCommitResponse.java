@@ -10,8 +10,22 @@ public class GithubCommitResponse {
 
     private Commit commit;
 
+    /**
+     * The linked GitHub account, distinct from commit.author (git config data).
+     * Null when GitHub cannot match the commit email to an account.
+     */
+    private AuthorAccount author;
+
     @JsonProperty("html_url")
     private String htmlUrl;
+
+    @Data
+    public static class AuthorAccount {
+
+        private Long id;
+
+        private String login;
+    }
 
     @Data
     public static class Commit {

@@ -28,10 +28,16 @@ public class EvidenceBuilder {
     private final TechnologyExtractor technologyExtractor;
     private final CodeStatsFetcher codeStatsFetcher;
 
+    /**
+     * accessToken comes from the caller's attached User. The repository entity
+     * is detached by the time it reaches here (open-in-view is off), so its
+     * lazy user cannot be dereferenced.
+     */
     public Evidence build(
             GithubRepository repository,
             List<GithubCommit> commits,
-            List<GithubPullRequest> pullRequests
+            List<GithubPullRequest> pullRequests,
+            String accessToken
     ) {
 
         System.out.println("\n====== COMMITS RECEIVED BY EVIDENCE BUILDER ======");
@@ -60,12 +66,13 @@ public class EvidenceBuilder {
                 .map(GithubPullRequest::getTitle)
                 .toList();
 
-        String readme = readmeFetcher.fetch(repository);
+        String readme = readmeFetcher.fetch(repository, accessToken);
 
         List<String> dependencies =
-                dependencyFetcher.fetch(repository);
+                dependencyFetcher.fetch(repository, accessToken);
 
-        List<String> repositoryTree = repositoryTreeFetcher.fetch(repository);
+        List<String> repositoryTree =
+                repositoryTreeFetcher.fetch(repository, accessToken);
 
         List<String> repositoryFeatures =
                 fileAnalyzer.analyze(repositoryTree);
@@ -76,7 +83,8 @@ public class EvidenceBuilder {
 
 
 
-        List<String> changedFiles = changedFilesFetcher.fetch(repository);
+        List<String> changedFiles =
+                changedFilesFetcher.fetch(repository, accessToken);
 
         List<String> changedFileInsights =
                 changedFileAnalyzer.analyze(changedFiles);
@@ -112,7 +120,8 @@ public class EvidenceBuilder {
         technologies.forEach(System.out::println);
 
 
-        CodeStats codeStats = codeStatsFetcher.fetch(repository, commits);
+        CodeStats codeStats =
+                codeStatsFetcher.fetch(repository, commits, accessToken);
 
         return Evidence.builder()
                 .repositoryName(repository.getName())

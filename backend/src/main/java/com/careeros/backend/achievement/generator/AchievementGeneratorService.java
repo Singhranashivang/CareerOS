@@ -1,6 +1,7 @@
 package com.careeros.backend.achievement.generator;
 
 import com.careeros.backend.achievement.engine.AchievementConfidenceCalculator;
+import com.careeros.backend.achievement.engine.EvidenceSufficiency;
 import com.careeros.backend.achievement.evidence.Evidence;
 import com.careeros.backend.achievement.evidence.EvidenceBuilder;
 import com.careeros.backend.achievement.knowledge.RepositoryKnowledge;
@@ -10,7 +11,9 @@ import com.careeros.backend.achievement.record.AchievementEntity;
 import com.careeros.backend.achievement.record.AchievementPersistenceService;
 import com.careeros.backend.achievement.record.AchievementRepository;
 import com.careeros.backend.achievement.record.AchievementSource;
+import com.careeros.backend.github.AnalysisOutcome;
 import com.careeros.backend.github.GithubRepository;
+import com.careeros.backend.github.RepositoryAnalysisRecorder;
 import com.careeros.backend.githubcommit.GithubCommitRepository;
 import com.careeros.backend.githubpullrequest.GithubPullRequestRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -36,13 +39,36 @@ public class AchievementGeneratorService {
     private final LLMService llmService;
 
     private final AchievementConfidenceCalculator confidenceCalculator;
+    private final EvidenceSufficiency evidenceSufficiency;
     private final AchievementPersistenceService achievementPersistenceService;
     private final AchievementRepository achievementRepository;
+    private final RepositoryAnalysisRecorder analysisRecorder;
 
     private final ObjectMapper objectMapper;
 
+    /**
+     * Every exit records an outcome on the repository. Without that, a repo that
+     * was analysed and declined looks exactly like one never analysed, and the
+     * Analyze button appears to do nothing.
+     */
     @Transactional
-    public AchievementOutput generate(GithubRepository repository) {
+    public AchievementOutput generate(GithubRepository repository, String accessToken) {
+
+        try {
+            return analyse(repository, accessToken);
+
+        } catch (Exception e) {
+            log.error("Analysis failed for {}", repository.getFullName(), e);
+            analysisRecorder.record(repository.getId(), AnalysisOutcome.ERROR,
+                    "Analysis failed: " + describe(e));
+            throw e instanceof RuntimeException runtime
+                    ? runtime
+                    : new RuntimeException("Analysis failed for "
+                            + repository.getFullName(), e);
+        }
+    }
+
+    private AchievementOutput analyse(GithubRepository repository, String accessToken) {
 
         var commits = githubCommitRepository.findByRepository(repository);
         var pullRequests = githubPullRequestRepository.findByRepository(repository);
@@ -50,11 +76,27 @@ public class AchievementGeneratorService {
         Evidence evidence = evidenceBuilder.build(
                 repository,
                 commits,
-                pullRequests
+                pullRequests,
+                accessToken
         );
 
+        // Before any LLM call, including the knowledge one below. A repository
+        // the user barely touched has nothing to claim, and asking anyway just
+        // produces a paraphrase of its name.
+        var shortfall = evidenceSufficiency.shortfall(evidence);
+        if (shortfall.isPresent()) {
+            log.info("No achievement for {}: {}",
+                    repository.getFullName(), shortfall.get());
+            analysisRecorder.record(repository.getId(),
+                    AnalysisOutcome.INSUFFICIENT, shortfall.get());
+            return AchievementOutput.builder()
+                    .insufficient(true)
+                    .reason(shortfall.get())
+                    .build();
+        }
+
         RepositoryKnowledge knowledge =
-                repositoryKnowledgeService.generate(repository);
+                repositoryKnowledgeService.generate(repository, accessToken);
 
         String prompt = achievementPromptBuilder.build(knowledge, evidence);
 
@@ -68,18 +110,27 @@ public class AchievementGeneratorService {
         try {
             output = objectMapper.readValue(response, AchievementOutput.class);
         } catch (Exception e) {
-            log.error("LLM returned unparseable achievement for {}",
-                    repository.getFullName(), e);
             throw new RuntimeException(
-                    "Failed to parse achievement for " + repository.getFullName(), e);
+                    "the model returned a response that could not be read", e);
+        }
+
+        // The model's own refusal. A normal outcome — return it unpersisted so
+        // the caller can distinguish "analysed, nothing to claim" from a failure.
+        if (output.isInsufficient()) {
+            String reason = output.getReason() == null || output.getReason().isBlank()
+                    ? "The evidence did not support a specific achievement"
+                    : output.getReason();
+            log.info("Model declined to claim an achievement for {}: {}",
+                    repository.getFullName(), reason);
+            analysisRecorder.record(repository.getId(),
+                    AnalysisOutcome.INSUFFICIENT, reason);
+            return output;
         }
 
         // A null title can't be deduped and can't be rendered — reject it here
         // rather than storing another untitled row.
         if (output.getTitle() == null || output.getTitle().isBlank()) {
-            throw new RuntimeException(
-                    "LLM returned an achievement with no title for "
-                            + repository.getFullName());
+            throw new RuntimeException("the model returned an achievement with no title");
         }
 
         // Regenerating on an already-analysed repo is normal; a duplicate row
@@ -90,6 +141,8 @@ public class AchievementGeneratorService {
 
             log.info("Achievement '{}' already exists for {} — skipping save",
                     output.getTitle(), repository.getFullName());
+            analysisRecorder.record(repository.getId(), AnalysisOutcome.ACHIEVEMENT,
+                    "Already recorded: " + output.getTitle());
             return output;
         }
 
@@ -116,6 +169,16 @@ public class AchievementGeneratorService {
 
         achievementPersistenceService.saveEntity(entity);
 
+        analysisRecorder.record(repository.getId(), AnalysisOutcome.ACHIEVEMENT,
+                "Generated: " + output.getTitle());
+
         return output;
+    }
+
+    /** Message a user could read, rather than a stack frame. */
+    private static String describe(Exception e) {
+        return e.getMessage() == null || e.getMessage().isBlank()
+                ? e.getClass().getSimpleName()
+                : e.getMessage();
     }
 }

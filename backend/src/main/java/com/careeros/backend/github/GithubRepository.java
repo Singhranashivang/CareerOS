@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Entity
 @Table(
@@ -61,4 +62,16 @@ public class GithubRepository {
 
     @Column(name = "synced_at")
     private LocalDateTime syncedAt;
+
+    /** Null until the repository has been analysed at least once. */
+    @Column(name = "last_analyzed_at")
+    private OffsetDateTime lastAnalyzedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "analysis_outcome", length = 32)
+    private AnalysisOutcome analysisOutcome;
+
+    /** Written for a UI to show verbatim, so it is a sentence, not a code. */
+    @Column(name = "analysis_reason", columnDefinition = "TEXT")
+    private String analysisReason;
 }

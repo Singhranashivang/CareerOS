@@ -1,11 +1,17 @@
 package com.careeros.backend.github.dto;
 
+import com.careeros.backend.github.AnalysisOutcome;
 import com.careeros.backend.github.GithubRepository;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+
 public record RepositoryResponse(
         Long id,
-        boolean analyzed,
+        /** Null means never analysed — distinct from analysed-and-declined. */
+        AnalysisOutcome analysisOutcome,
+        String analysisReason,
+        OffsetDateTime lastAnalyzedAt,
         int achievementCount,
         int commitCount,
         Long githubRepositoryId,
@@ -22,13 +28,14 @@ public record RepositoryResponse(
 ) {
     public static RepositoryResponse from(
             GithubRepository r,
-            boolean analyzed,
             int achievementCount,
             int commitCount
     ) {
         return new RepositoryResponse(
                 r.getId(),
-                analyzed,
+                r.getAnalysisOutcome(),
+                r.getAnalysisReason(),
+                r.getLastAnalyzedAt(),
                 achievementCount,
                 commitCount,
                 r.getGithubRepositoryId(),

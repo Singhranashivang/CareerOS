@@ -3,6 +3,7 @@ package com.careeros.backend.achievement.evidence;
 import com.careeros.backend.achievement.extractor.Feature;
 import lombok.*;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Getter
@@ -22,21 +23,30 @@ public class Evidence {
 
     private CodeStats codeStats;
 
-    private List<String> dependencies;
+    // Defaulted so a partially built Evidence cannot NPE a prompt builder.
+    @Builder.Default
+    private List<String> dependencies = new ArrayList<>();
 
-    private List<Feature> features;
+    @Builder.Default
+    private List<Feature> features = new ArrayList<>();
 
-    private List<String> pullRequestTitles;
+    @Builder.Default
+    private List<String> pullRequestTitles = new ArrayList<>();
 
-    private List<String> technologies;
+    @Builder.Default
+    private List<String> technologies = new ArrayList<>();
 
-    private List<String> repositoryTree;
+    @Builder.Default
+    private List<String> repositoryTree = new ArrayList<>();
 
-    private List<String> changedFiles;
+    @Builder.Default
+    private List<String> changedFiles = new ArrayList<>();
 
-    private List<String> repositoryFeatures;
+    @Builder.Default
+    private List<String> repositoryFeatures = new ArrayList<>();
 
-    private List<String> changedFileInsights;
+    @Builder.Default
+    private List<String> changedFileInsights = new ArrayList<>();
 
 
 }

@@ -30,7 +30,6 @@ public class GithubRepositoryService {
     private final GithubApiService githubApiService;
     private final GithubCommitRepository githubCommitRepository;
     private final AchievementRepository achievementRepository;
-    private final RepositoryKnowledgeRepository repositoryKnowledgeRepository;
 
     @Transactional(readOnly = true)
     public List<RepositoryResponse> listForUser(User user) {
@@ -42,13 +41,13 @@ public class GithubRepositoryService {
                 toMap(githubCommitRepository.countPerRepository(user));
         Map<Long, Long> achievements =
                 toMap(achievementRepository.countPerRepository(user));
-        Set<Long> analyzed =
-                repositoryKnowledgeRepository.findAnalyzedRepositoryIds(user);
 
+        // The analysis outcome now lives on the repository row. It used to be
+        // inferred from a repository_knowledge row existing, which could not
+        // represent "analysed, nothing to claim".
         return repositories.stream()
                 .map(r -> RepositoryResponse.from(
                         r,
-                        analyzed.contains(r.getId()),
                         achievements.getOrDefault(r.getId(), 0L).intValue(),
                         commits.getOrDefault(r.getId(), 0L).intValue()))
                 .toList();

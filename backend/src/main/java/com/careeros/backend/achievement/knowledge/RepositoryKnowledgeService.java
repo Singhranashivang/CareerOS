@@ -10,13 +10,16 @@ import com.careeros.backend.repositoryknowledge.RepositoryKnowledgeEntity;
 import com.careeros.backend.repositoryknowledge.RepositoryKnowledgePersistenceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class RepositoryKnowledgeService {
 
     private final GithubCommitRepository githubCommitRepository;
@@ -30,7 +33,7 @@ public class RepositoryKnowledgeService {
 
     private final ObjectMapper objectMapper;
 
-    public RepositoryKnowledge generate(GithubRepository repository) {
+    public RepositoryKnowledge generate(GithubRepository repository, String accessToken) {
 
         var existing =
                 repositoryKnowledgePersistenceService.findByRepository(repository);
@@ -41,57 +44,25 @@ public class RepositoryKnowledgeService {
 
             try {
 
+                // Passing an explicit null to the builder overrides
+                // @Builder.Default, so every list is read through readList().
                 return RepositoryKnowledge.builder()
                         .repositoryName(repository.getName())
                         .projectType(entity.getProjectType())
                         .domain(entity.getDomain())
-                        .technologies(
-                                objectMapper.readValue(
-                                        entity.getTechnologiesJson(),
-                                        objectMapper.getTypeFactory()
-                                                .constructCollectionType(
-                                                        List.class,
-                                                        String.class
-                                                )
-                                )
-                        )
-                        .architecture(
-                                objectMapper.readValue(
-                                        entity.getArchitectureJson(),
-                                        objectMapper.getTypeFactory()
-                                                .constructCollectionType(
-                                                        List.class,
-                                                        String.class
-                                                )
-                                )
-                        )
-                        .features(
-                                objectMapper.readValue(
-                                        entity.getFeaturesJson(),
-                                        objectMapper.getTypeFactory()
-                                                .constructCollectionType(
-                                                        List.class,
-                                                        String.class
-                                                )
-                                )
-                        )
+                        .technologies(readList(entity.getTechnologiesJson()))
+                        .architecture(readList(entity.getArchitectureJson()))
+                        .features(readList(entity.getFeaturesJson()))
                         .developerContributions(
-                                objectMapper.readValue(
-                                        entity.getDeveloperContributionsJson(),
-                                        objectMapper.getTypeFactory()
-                                                .constructCollectionType(
-                                                        List.class,
-                                                        String.class
-                                                )
-                                )
-                        )
+                                readList(entity.getDeveloperContributionsJson()))
                         .confidence(entity.getConfidence())
                         .build();
 
             } catch (Exception e) {
 
                 throw new RuntimeException(
-                        "Failed to read cached repository knowledge",
+                        "Failed to read cached repository knowledge for "
+                                + repository.getFullName(),
                         e
                 );
 
@@ -109,30 +80,38 @@ public class RepositoryKnowledgeService {
                 evidenceBuilder.build(
                         repository,
                         commits,
-                        pullRequests
+                        pullRequests,
+                        accessToken
                 );
 
         String prompt =
                 knowledgePromptBuilder.build(evidence);
 
-        System.out.println("========== KNOWLEDGE PROMPT ==========");
-        System.out.println(prompt);
-        System.out.println("======================================");
+        log.debug("Knowledge prompt for {}:\n{}", repository.getFullName(), prompt);
 
         String response =
                 llmService.generate(prompt);
 
-        System.out.println("========== KNOWLEDGE RESPONSE ==========");
-        System.out.println(response);
-        System.out.println("========================================");
+        log.debug("Knowledge response for {}:\n{}", repository.getFullName(), response);
+
+        RepositoryKnowledge knowledge;
+        try {
+            knowledge = objectMapper.readValue(response, RepositoryKnowledge.class);
+
+        } catch (Exception e) {
+            // The raw response is the only way to tell which field the model
+            // mangled; without it this failure is undiagnosable after the fact.
+            log.error("Could not read repository knowledge for {}. Raw response was:\n{}",
+                    repository.getFullName(), response, e);
+
+            // Message is surfaced as the ERROR analysis_reason, so it names the
+            // problem rather than the stack frame.
+            throw new RuntimeException(
+                    "the model returned repository knowledge in an unreadable shape: "
+                            + firstLine(e.getMessage()), e);
+        }
 
         try {
-
-            RepositoryKnowledge knowledge =
-                    objectMapper.readValue(
-                            response,
-                            RepositoryKnowledge.class
-                    );
 
             RepositoryKnowledgeEntity entity =
                     RepositoryKnowledgeEntity.builder()
@@ -170,12 +149,38 @@ public class RepositoryKnowledgeService {
         } catch (Exception e) {
 
             throw new RuntimeException(
-                    "Failed to generate repository knowledge",
+                    "Failed to store repository knowledge for "
+                            + repository.getFullName(),
                     e
             );
 
         }
 
+    }
+
+    /**
+     * Cached knowledge predates the tolerant deserializer, so a stored column
+     * can be null, blank, or literal "null". Any of those must read as an empty
+     * list rather than null.
+     */
+    private List<String> readList(String json) throws Exception {
+        if (json == null || json.isBlank()) {
+            return new ArrayList<>();
+        }
+        List<String> values = objectMapper.readValue(
+                json,
+                objectMapper.getTypeFactory()
+                        .constructCollectionType(List.class, String.class));
+        return values == null ? new ArrayList<>() : values;
+    }
+
+    /** Jackson messages carry a multi-line reference chain; the first line says what broke. */
+    private static String firstLine(String message) {
+        if (message == null || message.isBlank()) {
+            return "no detail available";
+        }
+        int newline = message.indexOf('\n');
+        return newline < 0 ? message : message.substring(0, newline);
     }
 
 }

@@ -11,7 +11,12 @@ public class ReadmeFetcher {
 
     private final GithubApiService githubApiService;
 
-    public String fetch(GithubRepository repository) {
+    /**
+     * The token is passed in rather than read from repository.getUser(): the
+     * repository arrives detached from the controller (open-in-view is off), so
+     * touching its lazy user throws LazyInitializationException.
+     */
+    public String fetch(GithubRepository repository, String accessToken) {
 
         String[] parts = repository.getFullName().split("/");
 
@@ -19,7 +24,7 @@ public class ReadmeFetcher {
                 parts[0],
                 parts[1],
                 "README.md",
-                repository.getUser().getEncryptedGithubAccessToken()
+                accessToken
         );
     }
 }

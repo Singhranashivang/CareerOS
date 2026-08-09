@@ -115,7 +115,8 @@ public class WeeklyAchievementService {
         Evidence evidence = evidenceBuilder.build(
                 repository,
                 commits,
-                pullRequests
+                pullRequests,
+                user.getEncryptedGithubAccessToken()
         );
 
         try {

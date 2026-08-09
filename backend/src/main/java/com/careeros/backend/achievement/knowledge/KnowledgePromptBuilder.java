@@ -53,18 +53,36 @@ Developer Contributions:
 - Created CONTRIBUTING guide
 - Started shortest path testing
 
-Return ONLY valid JSON.
+OUTPUT SCHEMA
+
+Return ONLY valid JSON, matching this shape exactly:
 
 {
-  "repositoryName":"",
-  "projectType":"",
-  "domain":"",
-  "technologies":[],
-  "architecture":[],
-  "features":[],
-  "developerContributions":[],
-  "confidence":0.95
+  "repositoryName": string,
+  "projectType":    string,
+  "domain":         string,
+  "technologies":            [string, string, ...],
+  "architecture":            [string, string, ...],
+  "features":                [string, string, ...],
+  "developerContributions":  [string, string, ...],
+  "confidence":     number between 0 and 1
 }
+
+SHAPE RULES — these are not optional
+
+- The four list fields are FLAT ARRAYS OF STRINGS. Nothing else.
+- No field may be an object. If the schema above does not show { }, do not emit { }.
+- Do not nest, group, or label the array entries.
+- An empty array is a valid answer. A wrong shape is not.
+
+Correct:
+
+  "architecture": ["Controller layer", "Service layer", "Repository layer"]
+
+Wrong — do not do this:
+
+  "architecture": {"type": "Layered Architecture", "layers": ["Controller", "Service"]}
+  "architecture": "Layered Architecture"
 
 ==========================
 REPOSITORY

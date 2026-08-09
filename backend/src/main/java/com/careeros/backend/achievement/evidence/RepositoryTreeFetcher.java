@@ -13,7 +13,8 @@ public class RepositoryTreeFetcher {
 
     private final GithubApiService githubApiService;
 
-    public List<String> fetch(GithubRepository repository) {
+    /** Token passed in; the repository is detached and its user is lazy. */
+    public List<String> fetch(GithubRepository repository, String accessToken) {
 
         String[] parts = repository.getFullName().split("/");
 
@@ -21,7 +22,7 @@ public class RepositoryTreeFetcher {
                 parts[0],
                 parts[1],
                 repository.getDefaultBranch(),
-                repository.getUser().getEncryptedGithubAccessToken()
+                accessToken
         );
 
     }

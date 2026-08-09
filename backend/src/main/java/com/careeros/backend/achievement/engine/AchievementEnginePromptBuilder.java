@@ -66,6 +66,16 @@ Return ONLY valid JSON.
   "confidence":0.95
 }
 
+IF THE EVIDENCE IS TOO THIN
+
+If the evidence below does not support a specific, grounded claim — a single
+trivial commit, only file uploads, only README or formatting edits — return
+exactly this instead:
+
+{"insufficient": true, "reason": "<one sentence naming what is missing>"}
+
+Returning insufficient is a correct answer. Do not invent work to fill the gap.
+
 ========================
 EVIDENCE
 ========================

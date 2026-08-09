@@ -46,7 +46,8 @@ public class StarStoryService {
         Evidence evidence = evidenceBuilder.build(
                 repository,
                 commits,
-                pullRequests
+                pullRequests,
+                user.getEncryptedGithubAccessToken()
         );
 
         try {

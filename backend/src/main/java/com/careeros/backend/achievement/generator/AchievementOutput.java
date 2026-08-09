@@ -23,4 +23,8 @@ public class AchievementOutput {
 
     private double confidence;
 
+    /** Set when the evidence did not support a grounded claim. Not an error. */
+    private boolean insufficient;
+
+    private String reason;
 }
