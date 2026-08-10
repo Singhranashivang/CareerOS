@@ -16,6 +16,18 @@ public class LLMService {
     @Value("${app.llm.model}")
     private String model;
 
+    /**
+     * Ollama's own default (2048) when this isn't sent — regardless of what
+     * the model itself supports (qwen2.5-coder:7b goes up to 32768). A large
+     * repo's prompt silently exceeding 2048 was exactly what caused CareerOS's
+     * schema-drift ERRORs: Ollama truncates from the front of the prompt to
+     * fit the window, which was cutting the JSON schema instruction (it lived
+     * near the top) while leaving the evidence dump at the tail intact — the
+     * model then improvised its own JSON shape because it never saw ours.
+     */
+    @Value("${app.llm.num-ctx:8192}")
+    private int numCtx;
+
     public String generate(String prompt) {
 
         OllamaRequest request = OllamaRequest.builder()
@@ -23,6 +35,7 @@ public class LLMService {
                 .prompt(prompt)
                 .stream(false)
                 .format("json")
+                .options(OllamaRequest.Options.builder().numCtx(numCtx).build())
                 .build();
 
         OllamaResponse response = restClient.post()

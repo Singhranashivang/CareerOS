@@ -32,4 +32,10 @@ public class WeeklySummary {
 
     private Double confidence;
 
+    /** Set when the computed confidence fell below the gate. Not persisted. */
+    @Builder.Default
+    private boolean insufficient = false;
+
+    private String reason;
+
 }

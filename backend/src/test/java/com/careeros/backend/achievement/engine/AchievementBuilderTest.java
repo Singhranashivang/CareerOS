@@ -20,11 +20,15 @@ import static org.mockito.Mockito.when;
 class AchievementBuilderTest {
 
     private final LLMService llmService = mock(LLMService.class);
+    private final AchievementConfidenceCalculator confidenceCalculator = mock(AchievementConfidenceCalculator.class);
+    private final AchievementConfidenceGate confidenceGate = mock(AchievementConfidenceGate.class);
     private final ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
 
     private final AchievementBuilder builder = new AchievementBuilder(
             new AchievementEnginePromptBuilder(),
             new EvidenceSufficiency(),
+            confidenceCalculator,
+            confidenceGate,
             llmService,
             objectMapper);
 
@@ -63,18 +67,37 @@ class AchievementBuilderTest {
     }
 
     @Test
-    void aGroundedAchievementStillComesBack() {
+    void aGroundedAchievementAboveTheConfidenceFloorComesBack() {
 
         when(llmService.generate(anyString())).thenReturn("""
                 {"title":"Built the commit ingestion pipeline",
                  "summary":"I added author filtering to commit sync.",
                  "highlights":[],"technologies":["Java"],"confidence":0.8}
                 """);
+        when(confidenceCalculator.calculate(any())).thenReturn(0.7);
+        when(confidenceGate.passes(0.7)).thenReturn(true);
 
         List<Achievement> result = builder.build(evidence(5, 10, 400));
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getTitle()).isEqualTo("Built the commit ingestion pipeline");
         assertThat(result.get(0).isInsufficient()).isFalse();
+        // Computed, not the model's self-reported 0.8.
+        assertThat(result.get(0).getConfidence()).isEqualTo(0.7);
+    }
+
+    @Test
+    void belowTheConfidenceFloorReturnsNothingEvenWhenTheModelDidNotDecline() {
+
+        when(llmService.generate(anyString())).thenReturn("""
+                {"title":"Built the commit ingestion pipeline",
+                 "summary":"I added author filtering to commit sync.",
+                 "highlights":[],"technologies":["Java"],"confidence":0.8}
+                """);
+        when(confidenceCalculator.calculate(any())).thenReturn(0.2);
+        when(confidenceGate.passes(0.2)).thenReturn(false);
+        when(confidenceGate.reasonBelowThreshold(0.2)).thenReturn("Computed confidence 0.20 is below the 0.50 threshold");
+
+        assertThat(builder.build(evidence(5, 10, 400))).isEmpty();
     }
 }

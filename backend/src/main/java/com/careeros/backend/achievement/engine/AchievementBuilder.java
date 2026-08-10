@@ -17,13 +17,16 @@ public class AchievementBuilder {
 
     private final AchievementEnginePromptBuilder promptBuilder;
     private final EvidenceSufficiency evidenceSufficiency;
+    private final AchievementConfidenceCalculator confidenceCalculator;
+    private final AchievementConfidenceGate confidenceGate;
     private final LLMService llmService;
     private final ObjectMapper objectMapper;
 
     /**
      * Empty when there is nothing worth claiming — either the evidence never
-     * cleared the floor, or the model itself said so. Both are normal outcomes,
-     * not errors: a repository the user barely touched should produce nothing.
+     * cleared the floor, the model itself said so, or the computed confidence
+     * fell below the gate. All normal outcomes, not errors: a repository the
+     * user barely touched should produce nothing.
      */
     public List<Achievement> build(Evidence evidence) {
 
@@ -47,6 +50,19 @@ public class AchievementBuilder {
             if (achievement.isInsufficient()) {
                 log.info("Model declined to claim an achievement for {}: {}",
                         evidence.getRepositoryName(), achievement.getReason());
+                return List.of();
+            }
+
+            // Computed from the evidence, not the model's self-reported number
+            // (the prompt asks for one, but every response we've seen just
+            // echoes back the example value) — same reasoning as the generator
+            // path's AchievementConfidenceCalculator.
+            double confidence = confidenceCalculator.calculate(evidence);
+            achievement.setConfidence(confidence);
+
+            if (!confidenceGate.passes(confidence)) {
+                log.info("Not persisting achievement for {}: {}",
+                        evidence.getRepositoryName(), confidenceGate.reasonBelowThreshold(confidence));
                 return List.of();
             }
 

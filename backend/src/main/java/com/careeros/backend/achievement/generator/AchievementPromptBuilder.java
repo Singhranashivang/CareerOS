@@ -5,12 +5,40 @@ import com.careeros.backend.achievement.extractor.Feature;
 import com.careeros.backend.achievement.knowledge.RepositoryKnowledge;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 public class AchievementPromptBuilder {
 
-    public String build(
+    /**
+     * Ollama truncates an over-length prompt from the front, keeping the
+     * tail nearest generation — see LLMService. Two defenses against that:
+     * the JSON schema now lives at the END of the prompt, immediately before
+     * "generate now", so it survives truncation instead of being the first
+     * thing dropped; and evidence lists are capped so a 176-file repo like
+     * CareerOS doesn't need truncation to begin with.
+     */
+    private static final int MAX_CHANGED_FILES = 30;
+    private static final int MAX_FEATURE_EVIDENCE = 8;
+
+    /** Retry path: a repo that still drifts at the normal caps gets a much smaller prompt. */
+    private static final int SHORTENED_MAX_CHANGED_FILES = 10;
+    private static final int SHORTENED_MAX_FEATURE_EVIDENCE = 3;
+
+    public String build(RepositoryKnowledge knowledge, Evidence evidence) {
+        return build(knowledge, evidence, MAX_CHANGED_FILES, MAX_FEATURE_EVIDENCE);
+    }
+
+    /** Used for the one retry on schema drift, per AchievementGeneratorService. */
+    public String buildShortened(RepositoryKnowledge knowledge, Evidence evidence) {
+        return build(knowledge, evidence, SHORTENED_MAX_CHANGED_FILES, SHORTENED_MAX_FEATURE_EVIDENCE);
+    }
+
+    private String build(
             RepositoryKnowledge knowledge,
-            Evidence evidence
+            Evidence evidence,
+            int maxChangedFiles,
+            int maxFeatureEvidence
     ) {
 
         StringBuilder prompt = new StringBuilder();
@@ -42,31 +70,6 @@ BAD EXAMPLES
 ✗ Successfully leveraged cutting-edge technologies to improve repository performance.
 
 ✗ Implemented innovative solutions that significantly enhanced system efficiency.
-
-Generate ONE engineering achievement.
-
-Return ONLY valid JSON.
-
-{
-  "title":"",
-  "resumeBullet":"",
-  "starSituation":"",
-  "starTask":"",
-  "starAction":"",
-  "starResult":"",
-  "confidence":0.95
-}
-
-IF THE EVIDENCE IS TOO THIN
-
-If the evidence below does not support a specific, grounded claim — a single
-trivial commit, only file uploads, only README or formatting edits — return
-exactly this instead:
-
-{"insufficient": true, "reason": "<one sentence naming what is missing>"}
-
-Returning insufficient is a correct answer. Do not invent work to fill the gap,
-and do not describe the repository itself as if it were your achievement.
 
 =========================
 Repository Knowledge
@@ -119,20 +122,12 @@ Detected Features:
                     .append(feature.getName())
                     .append("\n");
 
-            for (String item : feature.getEvidence()) {
-
-                prompt.append(" - ")
-                        .append(item)
-                        .append("\n");
-
-            }
+            appendCapped(prompt, feature.getEvidence(), maxFeatureEvidence, "commit", " - ");
         }
 
         prompt.append("\nChanged Files:\n");
 
-        for (String file : evidence.getChangedFiles()) {
-            prompt.append("- ").append(file).append("\n");
-        }
+        appendCapped(prompt, evidence.getChangedFiles(), maxChangedFiles, "file", "- ");
 
         prompt.append("\nPull Requests:\n");
 
@@ -140,14 +135,57 @@ Detected Features:
             prompt.append("- ").append(pr).append("\n");
         }
 
+        // The schema lives here, at the end, right before generation starts —
+        // not at the top. See the class javadoc for why.
         prompt.append("""
 
-Generate one high-quality resume achievement.
+=========================
+Output
+=========================
 
-Return ONLY JSON.
+Generate ONE engineering achievement from the evidence above.
+
+Return ONLY valid JSON, in exactly this shape:
+
+{
+  "title":"",
+  "resumeBullet":"",
+  "starSituation":"",
+  "starTask":"",
+  "starAction":"",
+  "starResult":"",
+  "confidence":0.95
+}
+
+IF THE EVIDENCE IS TOO THIN
+
+If the evidence above does not support a specific, grounded claim — a single
+trivial commit, only file uploads, only README or formatting edits — return
+exactly this instead:
+
+{"insufficient": true, "reason": "<one sentence naming what is missing>"}
+
+Returning insufficient is a correct answer. Do not invent work to fill the gap,
+and do not describe the repository itself as if it were your achievement.
+
+Return ONLY the JSON object now.
 """);
 
         return prompt.toString();
+    }
+
+    private static void appendCapped(
+            StringBuilder prompt, List<String> items, int max, String noun, String prefix
+    ) {
+        int shown = Math.min(items.size(), max);
+        for (int i = 0; i < shown; i++) {
+            prompt.append(prefix).append(items.get(i)).append("\n");
+        }
+        int remaining = items.size() - shown;
+        if (remaining > 0) {
+            prompt.append(prefix).append("...and ").append(remaining).append(" more ").append(noun)
+                    .append(remaining == 1 ? "" : "s").append("\n");
+        }
     }
 
 }

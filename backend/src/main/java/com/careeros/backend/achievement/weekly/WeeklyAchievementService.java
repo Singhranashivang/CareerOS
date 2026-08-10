@@ -1,6 +1,8 @@
 package com.careeros.backend.achievement.weekly;
 
 import com.careeros.backend.achievement.engine.Achievement;
+import com.careeros.backend.achievement.engine.AchievementConfidenceCalculator;
+import com.careeros.backend.achievement.engine.AchievementConfidenceGate;
 import com.careeros.backend.achievement.engine.AchievementEngine;
 import com.careeros.backend.achievement.evidence.Evidence;
 import com.careeros.backend.achievement.evidence.EvidenceBuilder;
@@ -17,6 +19,7 @@ import com.careeros.backend.user.User;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -24,6 +27,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class WeeklyAchievementService {
 
     private final GithubCommitRepository githubCommitRepository;
@@ -41,6 +45,9 @@ public class WeeklyAchievementService {
     private final WeeklyAchievementPersistenceService weeklyAchievementPersistenceService;
 
     private final RepositoryRecommendationService repositoryRecommendationService;
+
+    private final AchievementConfidenceCalculator confidenceCalculator;
+    private final AchievementConfidenceGate confidenceGate;
 
     private final ObjectMapper objectMapper;
 
@@ -192,6 +199,23 @@ public class WeeklyAchievementService {
                     WeeklySummary.class
             );
 
+            // Computed from the same evidence the prompt was built from, not
+            // the model's self-reported number — the prompt asks for one, but
+            // every response we've seen just echoes back the example value of
+            // 0.95, same issue the per-repo generator already had.
+            double confidence = confidenceCalculator.calculate(evidence);
+            summary.setConfidence(confidence);
+
+            if (!confidenceGate.passes(confidence)) {
+                String reason = confidenceGate.reasonBelowThreshold(confidence);
+                log.info("Not persisting weekly summary for {}: {}", user.getId(), reason);
+                return WeeklySummary.builder()
+                        .insufficient(true)
+                        .reason(reason)
+                        .confidence(confidence)
+                        .build();
+            }
+
             WeeklyAchievementEntity entity =
                     WeeklyAchievementEntity.builder()
                             .user(user)
@@ -207,7 +231,7 @@ public class WeeklyAchievementService {
                                             summary.getTechnologies()
                                     )
                             )
-                            .confidence(summary.getConfidence())
+                            .confidence(confidence)
                             .generatedAt(LocalDateTime.now())
                             .build();
 
