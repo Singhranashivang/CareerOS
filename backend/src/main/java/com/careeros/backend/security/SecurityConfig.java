@@ -8,13 +8,23 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.OncePerRequestFilter;
 
+import java.io.IOException;
 import java.util.List;
 
 @Configuration
@@ -30,7 +40,29 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
         http
-                .csrf(csrf -> csrf.disable())
+                // Cookie-based sessions + CORS allowCredentials(true) is exactly the
+                // configuration CSRF protection exists for: any origin can point a
+                // browser at an authenticated POST/PATCH/DELETE and the session
+                // cookie rides along automatically. withHttpOnlyFalse() so the
+                // frontend's JS can read the token and echo it back as a header —
+                // GET/HEAD/OPTIONS stay exempt by Spring Security's own default
+                // matcher, so this only gates state-changing requests.
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        // Spring Security's default handler (XorCsrfTokenRequestAttributeHandler)
+                        // masks the token for BREACH protection, expecting the caller to echo
+                        // back the same masked value it rendered into a server-side view. There
+                        // is no such view here — the frontend reads the raw value straight out
+                        // of the cookie — so the default handler would reject every request. The
+                        // plain handler compares against the raw cookie value instead.
+                        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
+                // CookieCsrfTokenRepository defers generating the token until
+                // something actually resolves it — normally a server-rendered view
+                // reading ${_csrf.token}. A pure REST API has no such view, so
+                // without this filter the XSRF-TOKEN cookie is never written and
+                // the frontend has nothing to read. Forces resolution on every
+                // request instead.
+                .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/", "/error", "/oauth2/**", "/login/**").permitAll()
@@ -67,5 +99,19 @@ public class SecurityConfig {
         var source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
+    }
+
+    /** See the comment where this is registered — forces the deferred CsrfToken to resolve. */
+    private static class CsrfCookieFilter extends OncePerRequestFilter {
+        @Override
+        protected void doFilterInternal(
+                HttpServletRequest request, HttpServletResponse response, FilterChain filterChain
+        ) throws ServletException, IOException {
+            var csrfToken = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+            if (csrfToken != null) {
+                csrfToken.getToken();
+            }
+            filterChain.doFilter(request, response);
+        }
     }
 }
