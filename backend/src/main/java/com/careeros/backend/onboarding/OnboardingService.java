@@ -6,6 +6,7 @@ import com.careeros.backend.achievement.recommendation.RepositoryRecommendationS
 import com.careeros.backend.github.GithubRepository;
 import com.careeros.backend.github.GithubRepositoryRepository;
 import com.careeros.backend.github.GithubRepositoryService;
+import com.careeros.backend.githubcommit.GithubCommitRepository;
 import com.careeros.backend.githubcommit.GithubCommitService;
 import com.careeros.backend.githubpullrequest.GithubPullRequestService;
 import com.careeros.backend.user.User;
@@ -37,6 +38,7 @@ public class OnboardingService {
     private final GithubRepositoryService githubRepositoryService;
     private final GithubRepositoryRepository githubRepositoryRepository;
     private final GithubCommitService githubCommitService;
+    private final GithubCommitRepository githubCommitRepository;
     private final GithubPullRequestService githubPullRequestService;
     private final RepositoryRecommendationService repositoryRecommendationService;
     private final AchievementGeneratorService achievementGeneratorService;
@@ -64,9 +66,14 @@ public class OnboardingService {
 
             onboardingRunService.stage(runId, OnboardingStage.SYNCING_COMMITS);
             for (GithubRepository repository : repositories) {
-                int saved = githubCommitService.syncCommits(
-                        repository, user.getGithubId(), accessToken);
-                onboardingRunService.commitsSynced(runId, saved);
+                githubCommitService.syncCommits(repository, user.getGithubId(), accessToken);
+                // The repo's total, not syncCommits' return value: that return is
+                // rows newly inserted THIS call, which is legitimately 0 for a repo
+                // already synced by an earlier run — correct for that method, wrong
+                // for a progress screen, which should show what the user actually
+                // has synced regardless of whether any of it is new today.
+                long total = githubCommitRepository.countByRepository(repository);
+                onboardingRunService.commitsSynced(runId, total);
             }
 
             onboardingRunService.stage(runId, OnboardingStage.SYNCING_PULL_REQUESTS);

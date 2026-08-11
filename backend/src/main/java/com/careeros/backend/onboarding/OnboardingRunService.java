@@ -71,10 +71,11 @@ public class OnboardingRunService {
         run.setStage(OnboardingStage.REPOS_FOUND);
     }
 
+    /** thisRepoTotal is the repo's total commit count, not rows newly inserted — see OnboardingService. */
     @Transactional
-    public void commitsSynced(Long runId, int savedThisRepo) {
+    public void commitsSynced(Long runId, long thisRepoTotal) {
         var run = get(runId);
-        run.setCommitsSynced(run.getCommitsSynced() + savedThisRepo);
+        run.setCommitsSynced(run.getCommitsSynced() + (int) thisRepoTotal);
     }
 
     @Transactional

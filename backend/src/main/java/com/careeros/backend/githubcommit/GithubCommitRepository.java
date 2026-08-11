@@ -17,6 +17,8 @@ public interface GithubCommitRepository
 
     List<GithubCommit> findByRepository(GithubRepository repository);
 
+    long countByRepository(GithubRepository repository);
+
     @Query("""
            select c.repository.id as repositoryId, count(c) as total
            from GithubCommit c
