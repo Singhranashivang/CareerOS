@@ -57,7 +57,7 @@ public class DashboardService {
                         .orElse(null);
 
         LinkedInPostEntity linkedInPost =
-                linkedInService.findByUser(user)
+                linkedInService.findLatestByUser(user)
                         .orElse(null);
 
         List<AchievementEntity> achievements =

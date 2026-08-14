@@ -1,20 +1,20 @@
 package com.careeros.backend.achievement.linkedin;
 
-import com.careeros.backend.achievement.weekly.WeeklySummary;
+import com.careeros.backend.achievement.record.AchievementEntity;
 import org.springframework.stereotype.Component;
 
 @Component
 public class LinkedInPromptBuilder {
 
-    public String build(WeeklySummary summary) {
+    public String build(AchievementEntity achievement) {
 
         return """
                 You are a software engineer writing a LinkedIn post about your week's work.
-                
+
                 The post should sound like it was written by a real developer sharing progress with their network.
-                
+
                 WRITING STYLE
-                
+
                 - Write naturally.
                 - Write in first person.
                 - Be authentic.
@@ -22,9 +22,9 @@ public class LinkedInPromptBuilder {
                 - Keep the tone confident but humble.
                 - Avoid sounding like an AI assistant.
                 - Avoid sounding like corporate marketing.
-                
+
                 DO NOT USE
-                
+
                 - Thrilled to share...
                 - Excited to announce...
                 - Honored to...
@@ -36,17 +36,17 @@ public class LinkedInPromptBuilder {
                 - Comprehensive
                 - Amazing
                 - Incredible journey
-                
+
                 Instead, write like an engineer reflecting on their work.
-                
+
                 GOOD EXAMPLES
-                
+
                 ✓ Spent some time this week expanding the Hacktoberfest repository. I added an F1 Race Predictor, implemented a few algorithm solutions, improved the contribution guide, and started testing the shortest path implementation. Looking forward to building more over the next few weeks.
-                
+
                 ✓ Wrapped up a productive week working on the Hacktoberfest repository. Added an F1 Race Predictor, implemented several algorithms, and improved the contributor documentation. Small progress every week really adds up.
-                
+
                 RULES
-                
+
                 - Use ONLY the provided evidence.
                 - Never invent achievements.
                 - Never invent technologies.
@@ -56,39 +56,51 @@ public class LinkedInPromptBuilder {
                 - No emojis.
                 - End naturally.
                 - Return ONLY JSON.
-                
+
                 {
                   "headline":"",
                   "post":"",
                   "confidence":0.95
                 }
-                
+
                 ====================
-                
+
                 Title:
                 """
-                + summary.getTitle()
+                + achievement.getTitle()
 
                 + """
-                
-                Summary:
+
+                Resume bullet:
                 """
-                + summary.getSummary()
+                + achievement.getResumeBullet()
 
                 + """
-                
-                Highlights:
+
+                Situation:
                 """
-                + summary.getHighlights()
+                + achievement.getStarSituation()
 
                 + """
-                
-                Technologies:
+
+                Task:
                 """
-                + summary.getTechnologies()
+                + achievement.getStarTask()
 
                 + """
-                
+
+                Action:
+                """
+                + achievement.getStarAction()
+
+                + """
+
+                Result:
+                """
+                + achievement.getStarResult()
+
+                + """
+
                 Return JSON only.
                 """;
 

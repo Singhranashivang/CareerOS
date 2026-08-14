@@ -1,5 +1,6 @@
 package com.careeros.backend.achievement.linkedinrecord;
 
+import com.careeros.backend.achievement.record.AchievementEntity;
 import com.careeros.backend.user.User;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
@@ -24,6 +25,11 @@ public class LinkedInPostEntity {
     @JoinColumn(name = "user_id")
     @JsonIgnore
     private User user;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "achievement_id")
+    @JsonIgnore
+    private AchievementEntity achievement;
 
     private String headline;
 

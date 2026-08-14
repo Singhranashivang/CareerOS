@@ -3,12 +3,14 @@ package com.careeros.backend.achievement.linkedin;
 import com.careeros.backend.achievement.linkedinrecord.LinkedInPostEntity;
 import com.careeros.backend.achievement.linkedinrecord.LinkedInPostPersistenceService;
 import com.careeros.backend.achievement.llm.LLMService;
-import com.careeros.backend.achievement.weekly.WeeklyAchievementService;
-import com.careeros.backend.achievement.weekly.WeeklySummary;
+import com.careeros.backend.achievement.record.AchievementEntity;
+import com.careeros.backend.achievement.record.AchievementRepository;
 import com.careeros.backend.user.User;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 
@@ -16,19 +18,23 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class LinkedInPostService {
 
-    private final WeeklyAchievementService weeklyAchievementService;
+    private final AchievementRepository achievementRepository;
     private final LinkedInPromptBuilder linkedInPromptBuilder;
     private final LLMService llmService;
     private final LinkedInPostPersistenceService linkedInPostPersistenceService;
 
     private final ObjectMapper objectMapper;
 
-    public LinkedInPost generate(User user) {
+    public LinkedInPost generate(User user, Long achievementId, boolean regenerate) {
 
-        // Return cached LinkedIn post if it already exists
-        var existing = linkedInPostPersistenceService.findByUser(user);
+        AchievementEntity achievement = achievementRepository
+                .findByIdAndUser(achievementId, user)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Achievement not found"));
 
-        if (existing.isPresent()) {
+        var existing = linkedInPostPersistenceService.findByAchievement(achievement);
+
+        if (!regenerate && existing.isPresent()) {
 
             LinkedInPostEntity entity = existing.get();
 
@@ -39,22 +45,11 @@ public class LinkedInPostService {
                     .build();
         }
 
-        WeeklySummary summary =
-                weeklyAchievementService.generate(user);
-
         String prompt =
-                linkedInPromptBuilder.build(summary);
-
-        System.out.println("\n========== LINKEDIN PROMPT ==========");
-        System.out.println(prompt);
-        System.out.println("=====================================\n");
+                linkedInPromptBuilder.build(achievement);
 
         String response =
                 llmService.generate(prompt);
-
-        System.out.println("\n========== LINKEDIN RESPONSE ==========");
-        System.out.println(response);
-        System.out.println("=======================================\n");
 
         try {
 
@@ -63,14 +58,13 @@ public class LinkedInPostService {
                     LinkedInPost.class
             );
 
-            LinkedInPostEntity entity =
-                    LinkedInPostEntity.builder()
-                            .user(user)
-                            .headline(post.getHeadline())
-                            .post(post.getPost())
-                            .confidence(post.getConfidence())
-                            .generatedAt(LocalDateTime.now())
-                            .build();
+            LinkedInPostEntity entity = existing.orElseGet(LinkedInPostEntity::new);
+            entity.setUser(user);
+            entity.setAchievement(achievement);
+            entity.setHeadline(post.getHeadline());
+            entity.setPost(post.getPost());
+            entity.setConfidence(post.getConfidence());
+            entity.setGeneratedAt(LocalDateTime.now());
 
             linkedInPostPersistenceService.save(entity);
 
