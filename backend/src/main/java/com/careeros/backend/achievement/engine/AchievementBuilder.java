@@ -19,6 +19,7 @@ public class AchievementBuilder {
     private final EvidenceSufficiency evidenceSufficiency;
     private final AchievementConfidenceCalculator confidenceCalculator;
     private final AchievementConfidenceGate confidenceGate;
+    private final GroundingValidator groundingValidator;
     private final LLMService llmService;
     private final ObjectMapper objectMapper;
 
@@ -50,6 +51,16 @@ public class AchievementBuilder {
             if (achievement.isInsufficient()) {
                 log.info("Model declined to claim an achievement for {}: {}",
                         evidence.getRepositoryName(), achievement.getReason());
+                return List.of();
+            }
+
+            // Same check the per-repo generator applies: reject a well-formed
+            // but invented claim before it's ever scored or persisted.
+            var ungroundedReason = groundingValidator.ungroundedReason(
+                    achievement.getTitle(), achievement.getSummary(), evidence);
+            if (ungroundedReason.isPresent()) {
+                log.warn("Achievement for {} is not grounded in the evidence: {}. title=\"{}\"",
+                        evidence.getRepositoryName(), ungroundedReason.get(), achievement.getTitle());
                 return List.of();
             }
 

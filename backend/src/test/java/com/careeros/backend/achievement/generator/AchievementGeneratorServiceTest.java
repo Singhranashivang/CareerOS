@@ -7,6 +7,7 @@ import com.careeros.backend.achievement.engine.GroundingValidator;
 import com.careeros.backend.achievement.evidence.Evidence;
 import com.careeros.backend.achievement.evidence.EvidenceBuilder;
 import com.careeros.backend.achievement.extractor.Feature;
+import com.careeros.backend.achievement.filter.CommitFilter;
 import com.careeros.backend.achievement.knowledge.RepositoryKnowledge;
 import com.careeros.backend.achievement.knowledge.RepositoryKnowledgeService;
 import com.careeros.backend.achievement.llm.LLMService;
@@ -15,6 +16,7 @@ import com.careeros.backend.achievement.record.AchievementRepository;
 import com.careeros.backend.github.AnalysisOutcome;
 import com.careeros.backend.github.GithubRepository;
 import com.careeros.backend.github.RepositoryAnalysisRecorder;
+import com.careeros.backend.githubcommit.GithubCommit;
 import com.careeros.backend.githubcommit.GithubCommitRepository;
 import com.careeros.backend.githubpullrequest.GithubPullRequestRepository;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -27,10 +29,12 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class AchievementGeneratorServiceTest {
 
+    private final GithubCommitRepository githubCommitRepository = mock(GithubCommitRepository.class);
     private final EvidenceBuilder evidenceBuilder = mock(EvidenceBuilder.class);
     private final RepositoryKnowledgeService repositoryKnowledgeService = mock(RepositoryKnowledgeService.class);
     private final AchievementPromptBuilder achievementPromptBuilder = mock(AchievementPromptBuilder.class);
@@ -43,8 +47,9 @@ class AchievementGeneratorServiceTest {
     private final RepositoryAnalysisRecorder analysisRecorder = mock(RepositoryAnalysisRecorder.class);
 
     private final AchievementGeneratorService service = new AchievementGeneratorService(
-            mock(GithubCommitRepository.class),
+            githubCommitRepository,
             mock(GithubPullRequestRepository.class),
+            new CommitFilter(), // pure logic, no reason to mock it
             evidenceBuilder,
             repositoryKnowledgeService,
             achievementPromptBuilder,
@@ -200,5 +205,22 @@ class AchievementGeneratorServiceTest {
         assertThat(output.getTitle()).isEqualTo("Spiral Search Implementation");
         verify(achievementPersistenceService).saveEntity(any());
         verify(analysisRecorder).record(eq(4L), eq(AnalysisOutcome.ACHIEVEMENT), any());
+    }
+
+    /** Same protection the weekly and star paths already had — see WeeklyAchievementService/StarStoryService. */
+    @Test
+    void mergeAndTrivialCommitsAreFilteredOutBeforeEvidenceIsBuilt() {
+        GithubCommit real = GithubCommit.builder().message("Add spiral search algorithm").build();
+        GithubCommit merge = GithubCommit.builder().message("Merge pull request #12 from feature/x").build();
+        GithubCommit typo = GithubCommit.builder().message("fix typo in README").build();
+        when(githubCommitRepository.findByRepository(REPO)).thenReturn(List.of(real, merge, typo));
+
+        stubUpTo(groundedEvidence(), """
+                {"insufficient": true, "reason": "not enough evidence"}
+                """);
+
+        service.generate(REPO, "token");
+
+        verify(evidenceBuilder).build(eq(REPO), eq(List.of(real)), any(), any());
     }
 }

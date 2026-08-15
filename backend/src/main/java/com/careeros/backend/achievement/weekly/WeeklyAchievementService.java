@@ -4,6 +4,8 @@ import com.careeros.backend.achievement.engine.Achievement;
 import com.careeros.backend.achievement.engine.AchievementConfidenceCalculator;
 import com.careeros.backend.achievement.engine.AchievementConfidenceGate;
 import com.careeros.backend.achievement.engine.AchievementEngine;
+import com.careeros.backend.achievement.engine.EvidenceSufficiency;
+import com.careeros.backend.achievement.engine.GroundingValidator;
 import com.careeros.backend.achievement.evidence.Evidence;
 import com.careeros.backend.achievement.evidence.EvidenceBuilder;
 import com.careeros.backend.achievement.filter.CommitFilter;
@@ -50,6 +52,8 @@ public class WeeklyAchievementService {
 
     private final AchievementConfidenceCalculator confidenceCalculator;
     private final AchievementConfidenceGate confidenceGate;
+    private final EvidenceSufficiency evidenceSufficiency;
+    private final GroundingValidator groundingValidator;
 
     private final ObjectMapper objectMapper;
 
@@ -182,6 +186,17 @@ public class WeeklyAchievementService {
         // Weekly Summary
         // ==========================================
 
+        // Same floor the per-repo generator checks before spending an LLM call:
+        // a repository barely touched has nothing to summarise either.
+        var shortfall = evidenceSufficiency.shortfall(evidence);
+        if (shortfall.isPresent()) {
+            log.info("Not generating weekly summary for {}: {}", user.getId(), shortfall.get());
+            return WeeklySummary.builder()
+                    .insufficient(true)
+                    .reason(shortfall.get())
+                    .build();
+        }
+
         String prompt = weeklyPromptBuilder.build(evidence);
 
         System.out.println("\n========== WEEKLY PROMPT ==========");
@@ -200,6 +215,20 @@ public class WeeklyAchievementService {
                     response,
                     WeeklySummary.class
             );
+
+            // Same check the per-repo generator applies, before scoring: a
+            // well-formed summary that shares no word with the evidence is
+            // invented, not summarised.
+            var ungroundedReason = groundingValidator.ungroundedReason(
+                    summary.getTitle(), summary.getSummary(), evidence);
+            if (ungroundedReason.isPresent()) {
+                log.warn("Weekly summary for {} is not grounded in the evidence: {}. title=\"{}\"",
+                        user.getId(), ungroundedReason.get(), summary.getTitle());
+                return WeeklySummary.builder()
+                        .insufficient(true)
+                        .reason("the summary is not grounded in the evidence: " + ungroundedReason.get())
+                        .build();
+            }
 
             // Computed from the same evidence the prompt was built from, not
             // the model's self-reported number — the prompt asks for one, but

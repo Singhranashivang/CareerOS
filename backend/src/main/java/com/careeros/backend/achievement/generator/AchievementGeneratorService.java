@@ -6,6 +6,7 @@ import com.careeros.backend.achievement.engine.EvidenceSufficiency;
 import com.careeros.backend.achievement.engine.GroundingValidator;
 import com.careeros.backend.achievement.evidence.Evidence;
 import com.careeros.backend.achievement.evidence.EvidenceBuilder;
+import com.careeros.backend.achievement.filter.CommitFilter;
 import com.careeros.backend.achievement.knowledge.RepositoryKnowledge;
 import com.careeros.backend.achievement.knowledge.RepositoryKnowledgeService;
 import com.careeros.backend.achievement.llm.LLMService;
@@ -34,6 +35,7 @@ public class AchievementGeneratorService {
     private final GithubCommitRepository githubCommitRepository;
     private final GithubPullRequestRepository githubPullRequestRepository;
 
+    private final CommitFilter commitFilter;
     private final EvidenceBuilder evidenceBuilder;
     private final RepositoryKnowledgeService repositoryKnowledgeService;
 
@@ -74,7 +76,7 @@ public class AchievementGeneratorService {
 
     private AchievementOutput analyse(GithubRepository repository, String accessToken) {
 
-        var commits = githubCommitRepository.findByRepository(repository);
+        var commits = commitFilter.filter(githubCommitRepository.findByRepository(repository));
         var pullRequests = githubPullRequestRepository.findByRepository(repository);
 
         Evidence evidence = evidenceBuilder.build(
