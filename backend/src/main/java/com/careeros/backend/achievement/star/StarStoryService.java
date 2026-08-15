@@ -7,6 +7,7 @@ import com.careeros.backend.achievement.llm.LLMService;
 import com.careeros.backend.github.GithubRepositoryRepository;
 import com.careeros.backend.githubcommit.GithubCommitRepository;
 import com.careeros.backend.githubpullrequest.GithubPullRequestRepository;
+import com.careeros.backend.user.GithubTokenEncryptor;
 import com.careeros.backend.user.User;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ public class StarStoryService {
     private final LLMService llmService;
 
     private final ObjectMapper objectMapper;
+    private final GithubTokenEncryptor githubTokenEncryptor;
 
     public StarStory generate(User user) {
 
@@ -47,7 +49,7 @@ public class StarStoryService {
                 repository,
                 commits,
                 pullRequests,
-                user.getEncryptedGithubAccessToken()
+                githubTokenEncryptor.decrypt(user.getGithubAccessToken())
         );
 
         try {

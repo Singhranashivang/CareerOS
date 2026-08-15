@@ -30,7 +30,7 @@ class GithubCommitServiceTest {
         User owner = User.builder()
                 .githubId(OWNER_GITHUB_ID)
                 .username("Singhranashivang")
-                .encryptedGithubAccessToken("token")
+                .githubAccessToken("token")
                 .build();
 
         GithubRepository repository = new GithubRepository();

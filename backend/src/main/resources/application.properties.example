@@ -1,0 +1,56 @@
+spring.application.name=backend
+
+# PostgreSQL
+spring.datasource.url=jdbc:postgresql://localhost:5432/careeros
+#spring.datasource.url=jdbc:postgresql://localhost:5432/careeros_test
+
+spring.datasource.username=postgres
+spring.datasource.password=12345
+
+# JPA
+spring.jpa.hibernate.ddl-auto=validate
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.open-in-view=false
+
+# Flyway
+spring.flyway.enabled=true
+spring.flyway.locations=classpath:db/migration
+
+# GitHub OAuth. client-id isn't secret (it's visible in the redirect URL) so
+# it's a real value here; client-secret must come from the environment — no
+# default, same pattern as app.github-token.encryption-key below.
+spring.security.oauth2.client.registration.github.client-id=
+spring.security.oauth2.client.registration.github.client-secret=${GITHUB_OAUTH_CLIENT_SECRET}
+spring.security.oauth2.client.registration.github.scope=read:user,user:email
+
+# GitHub token encryption at rest (GithubTokenEncryptor). No default on
+# purpose — startup fails loudly if this isn't set rather than falling back
+# to a hardcoded key.
+app.github-token.encryption-key=${GITHUB_TOKEN_ENCRYPTION_KEY}
+
+
+# Frontend
+app.frontend-url=http://localhost:3000
+
+# Outbound HTTP
+# 'simple' is HttpURLConnection: it opens nothing until a request is made. The
+# default 'jdk' factory constructs a java.net.http.HttpClient eagerly, which needs
+# a working AF_UNIX loopback pair for its selector. Switch back to jdk (for HTTP/2
+# and connection pooling) once that works on the host.
+spring.http.client.factory=simple
+spring.http.client.connect-timeout=10s
+spring.http.client.read-timeout=600s
+
+# LLM (Ollama)
+app.llm.model=qwen2.5-coder:7b
+# Ollama's own default is 2048 regardless of model capability — see LLMService.
+app.llm.num-ctx=8192
+
+# Below this, a generated achievement is recorded as INSUFFICIENT instead of
+# persisted. Applies to both the per-repo generator and weekly paths.
+app.achievement.min-confidence=0.5
+
+# Post scheduling
+app.scheduling.enabled=true
+app.scheduling.worker-id=${HOSTNAME:local}

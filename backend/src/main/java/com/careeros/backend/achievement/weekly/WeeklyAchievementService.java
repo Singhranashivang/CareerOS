@@ -15,6 +15,7 @@ import com.careeros.backend.achievement.weeklyrecord.WeeklyAchievementEntity;
 import com.careeros.backend.achievement.weeklyrecord.WeeklyAchievementPersistenceService;
 import com.careeros.backend.githubcommit.GithubCommitRepository;
 import com.careeros.backend.githubpullrequest.GithubPullRequestRepository;
+import com.careeros.backend.user.GithubTokenEncryptor;
 import com.careeros.backend.user.User;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -45,6 +46,7 @@ public class WeeklyAchievementService {
     private final WeeklyAchievementPersistenceService weeklyAchievementPersistenceService;
 
     private final RepositoryRecommendationService repositoryRecommendationService;
+    private final GithubTokenEncryptor githubTokenEncryptor;
 
     private final AchievementConfidenceCalculator confidenceCalculator;
     private final AchievementConfidenceGate confidenceGate;
@@ -123,7 +125,7 @@ public class WeeklyAchievementService {
                 repository,
                 commits,
                 pullRequests,
-                user.getEncryptedGithubAccessToken()
+                githubTokenEncryptor.decrypt(user.getGithubAccessToken())
         );
 
         try {

@@ -6,6 +6,7 @@ import com.careeros.backend.github.dto.RepositoryCountProjection;
 import com.careeros.backend.github.dto.RepositoryResponse;
 import com.careeros.backend.githubcommit.GithubCommitRepository;
 import com.careeros.backend.repositoryknowledge.RepositoryKnowledgeRepository;
+import com.careeros.backend.user.GithubTokenEncryptor;
 import com.careeros.backend.user.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +31,7 @@ public class GithubRepositoryService {
     private final GithubApiService githubApiService;
     private final GithubCommitRepository githubCommitRepository;
     private final AchievementRepository achievementRepository;
+    private final GithubTokenEncryptor githubTokenEncryptor;
 
     @Transactional(readOnly = true)
     public List<RepositoryResponse> listForUser(User user) {
@@ -68,7 +70,7 @@ public class GithubRepositoryService {
     @Transactional
     public int syncRepositories(User user) {
 
-        var remote = githubApiService.getRepositories(user.getEncryptedGithubAccessToken());
+        var remote = githubApiService.getRepositories(githubTokenEncryptor.decrypt(user.getGithubAccessToken()));
 
         log.info("GitHub returned {} repositories for user {}", remote.size(), user.getId());
 

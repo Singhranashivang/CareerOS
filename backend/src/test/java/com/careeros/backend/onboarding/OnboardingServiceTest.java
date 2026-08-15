@@ -8,6 +8,7 @@ import com.careeros.backend.github.GithubRepositoryService;
 import com.careeros.backend.githubcommit.GithubCommitRepository;
 import com.careeros.backend.githubcommit.GithubCommitService;
 import com.careeros.backend.githubpullrequest.GithubPullRequestService;
+import com.careeros.backend.user.GithubTokenEncryptor;
 import com.careeros.backend.user.User;
 import com.careeros.backend.user.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -33,6 +35,7 @@ class OnboardingServiceTest {
     private final RepositoryRecommendationService repositoryRecommendationService =
             mock(RepositoryRecommendationService.class);
     private final AchievementGeneratorService achievementGeneratorService = mock(AchievementGeneratorService.class);
+    private final GithubTokenEncryptor githubTokenEncryptor = mock(GithubTokenEncryptor.class);
 
     private final OnboardingService service = new OnboardingService(
             onboardingRunService,
@@ -43,7 +46,8 @@ class OnboardingServiceTest {
             githubCommitRepository,
             githubPullRequestService,
             repositoryRecommendationService,
-            achievementGeneratorService);
+            achievementGeneratorService,
+            githubTokenEncryptor);
 
     /**
      * Reproduces the reported bug: a repo already synced by an earlier run
@@ -53,8 +57,9 @@ class OnboardingServiceTest {
      */
     @Test
     void commitsSyncedReflectsEachReposTotalNotSyncCommitsDelta() {
-        User user = User.builder().id(1L).githubId(99L).encryptedGithubAccessToken("token").build();
+        User user = User.builder().id(1L).githubId(99L).githubAccessToken("encrypted-token").build();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(githubTokenEncryptor.decrypt(anyString())).thenReturn("token");
         when(githubRepositoryService.syncRepositories(user)).thenReturn(2);
 
         GithubRepository repoA = GithubRepository.builder().id(10L).name("a").fullName("u/a").build();

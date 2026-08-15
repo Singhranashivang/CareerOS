@@ -4,6 +4,7 @@ import com.careeros.backend.github.GithubRepositoryRepository;
 import com.careeros.backend.repositoryknowledge.RepositoryKnowledgeEntity;
 import com.careeros.backend.repositoryknowledge.RepositoryKnowledgePersistenceService;
 import com.careeros.backend.security.CurrentUserService;
+import com.careeros.backend.user.GithubTokenEncryptor;
 import com.careeros.backend.user.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -20,6 +21,7 @@ public class RepositoryKnowledgeController {
     private final GithubRepositoryRepository githubRepositoryRepository;
     private final CurrentUserService currentUserService;
     private final GithubRepositoryService githubRepositoryService;
+    private final GithubTokenEncryptor githubTokenEncryptor;
 
 
     @GetMapping("/generate")
@@ -33,7 +35,7 @@ public class RepositoryKnowledgeController {
                 .orElseThrow(() -> new RuntimeException("No repositories synced yet"));
 
         return repositoryKnowledgeService.generate(
-                repository, user.getEncryptedGithubAccessToken());
+                repository, githubTokenEncryptor.decrypt(user.getGithubAccessToken()));
     }
 
     // Step 7 adds the ownership check here.

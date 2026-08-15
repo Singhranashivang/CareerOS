@@ -40,9 +40,10 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    @Column(name = "github_access_token", nullable = false)
+    /** Encrypted at rest — see GithubTokenEncryptor. Null means the user needs to reconnect GitHub. */
+    @Column(name = "github_access_token")
     @JsonIgnore
-    private String encryptedGithubAccessToken;
+    private String githubAccessToken;
 
     @PrePersist
     protected void onCreate() {

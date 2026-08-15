@@ -9,6 +9,7 @@ import com.careeros.backend.github.GithubRepositoryService;
 import com.careeros.backend.githubcommit.GithubCommitRepository;
 import com.careeros.backend.githubcommit.GithubCommitService;
 import com.careeros.backend.githubpullrequest.GithubPullRequestService;
+import com.careeros.backend.user.GithubTokenEncryptor;
 import com.careeros.backend.user.User;
 import com.careeros.backend.user.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +43,7 @@ public class OnboardingService {
     private final GithubPullRequestService githubPullRequestService;
     private final RepositoryRecommendationService repositoryRecommendationService;
     private final AchievementGeneratorService achievementGeneratorService;
+    private final GithubTokenEncryptor githubTokenEncryptor;
 
     @Async("onboardingExecutor")
     public void run(Long runId, Long userId, int repoLimit) {
@@ -54,9 +56,9 @@ public class OnboardingService {
             onboardingRunService.fail(runId, "User no longer exists");
             return;
         }
-        String accessToken = user.getEncryptedGithubAccessToken();
-
         try {
+            String accessToken = githubTokenEncryptor.decrypt(user.getGithubAccessToken());
+
             onboardingRunService.stage(runId, OnboardingStage.CONNECTING);
 
             int reposFound = githubRepositoryService.syncRepositories(user);

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final GithubTokenEncryptor githubTokenEncryptor;
 
     public User createOrUpdateGitHubUser(
             Long githubId,
@@ -16,7 +17,7 @@ public class UserService {
             String name,
             String email,
             String avatarUrl,
-            String encryptedGithubAccessToken
+            String githubAccessToken
     ) {
 
         User user = userRepository.findByGithubId(githubId)
@@ -28,7 +29,7 @@ public class UserService {
         user.setName(name);
         user.setEmail(email);
         user.setAvatarUrl(avatarUrl);
-        user.setEncryptedGithubAccessToken(encryptedGithubAccessToken);
+        user.setGithubAccessToken(githubTokenEncryptor.encrypt(githubAccessToken));
 
         return userRepository.save(user);
     }

@@ -1,7 +1,10 @@
 package com.careeros.backend.achievement.linkedin;
 
+import com.careeros.backend.achievement.llm.BannedVocabulary;
 import com.careeros.backend.achievement.record.AchievementEntity;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 @Component
 public class LinkedInPromptBuilder {
@@ -9,53 +12,86 @@ public class LinkedInPromptBuilder {
     public String build(AchievementEntity achievement) {
 
         return """
-                You are a software engineer writing a LinkedIn post about your week's work.
+                You are a software engineer writing a LinkedIn post about one specific
+                piece of work you just finished.
 
-                The post should sound like it was written by a real developer sharing progress with their network.
+                The post must read like a developer talking, not a resume bullet and not
+                a press release. A single dense paragraph is a failure regardless of how
+                accurate it is.
 
-                WRITING STYLE
+                SHAPE
 
-                - Write naturally.
-                - Write in first person.
-                - Be authentic.
-                - Mention what you actually built.
-                - Keep the tone confident but humble.
-                - Avoid sounding like an AI assistant.
-                - Avoid sounding like corporate marketing.
+                - 3 to 5 short paragraphs, separated by a blank line each. Never one block of text.
+                - Open with the single most specific or surprising fact from the evidence.
+                  Never open with a summary of "this week" or the category of work.
+                - Close with one line worth remembering: a lesson, a trade-off, or a question.
+                - Under 150 words total.
 
-                DO NOT USE
+                VOICE
 
-                - Thrilled to share...
-                - Excited to announce...
-                - Honored to...
-                - Delighted to...
-                - Leveraged
-                - Utilized
-                - Cutting-edge
-                - Robust
-                - Comprehensive
-                - Amazing
-                - Incredible journey
+                - First person, past tense, plain.
+                - Name the actual project and the actual classes, files, or systems given
+                  in the evidence. Do not talk about the work in the abstract.
+                - Banned words and phrases, in any form, anywhere in the output —
+                  the headline is not exempt: """
+                + BannedVocabulary.PROMPT_LIST
+                + """
+                .
+                - No hashtags. No emoji. No "excited to share", "thrilled to", "honored to",
+                  "delighted to".
 
-                Instead, write like an engineer reflecting on their work.
+                SUBSTANCE
 
-                GOOD EXAMPLES
+                - Lead with the specific detail, not the category. "Two controllers were
+                  still resolving the user inline" beats "identified vulnerabilities in the
+                  authentication flow".
+                - State what was actually wrong or missing before, not only what was done.
+                - Use ONLY the facts in the provided evidence. Never invent achievements,
+                  technologies, or business impact. Never claim an improvement or metric
+                  that doesn't appear in the input.
+                - The evidence text below was written by someone else and may itself
+                  contain the banned words above (it often does). Take only the facts from
+                  it — what was broken, what you changed, what file or class it lived in —
+                  and re-describe them in your own plain words. Copying its vocabulary,
+                  including a banned word, is still a violation even though the word was
+                  "in the evidence".
 
-                ✓ Spent some time this week expanding the Hacktoberfest repository. I added an F1 Race Predictor, implemented a few algorithm solutions, improved the contribution guide, and started testing the shortest path implementation. Looking forward to building more over the next few weeks.
+                GOOD EXAMPLES (different kinds of work — match this register, not this content)
 
-                ✓ Wrapped up a productive week working on the Hacktoberfest repository. Added an F1 Race Predictor, implemented several algorithms, and improved the contributor documentation. Small progress every week really adds up.
+                ✓ Bug fix:
+                Two controllers were still pulling the user id straight off the session
+                instead of going through CurrentUserService. Easy to miss, easy to exploit —
+                a forged session could touch data that wasn't scoped to the right account.
 
-                RULES
+                Went through every controller by hand and rerouted them through the shared
+                service. No new dependency, just deleting the shortcuts.
 
-                - Use ONLY the provided evidence.
-                - Never invent achievements.
-                - Never invent technologies.
-                - Never invent business impact.
-                - Maximum 180 words.
-                - No hashtags.
-                - No emojis.
-                - End naturally.
-                - Return ONLY JSON.
+                The parts of a codebase that look "basically fine" are usually the ones
+                nobody re-checked in a year.
+
+                ✓ Refactor:
+                LinkedInPostService was caching one post per user, forever. The first
+                achievement generated set the copy for every achievement after it, and
+                nobody noticed because the text still looked plausible.
+
+                Moved the cache key from user to achievement id and added a unique index so
+                regeneration overwrites instead of piling up rows.
+
+                The bug wasn't in the LLM call. It was in what we picked as a cache key.
+
+                ✓ New feature:
+                Added a claim loop to the scheduler using SELECT ... FOR UPDATE SKIP LOCKED
+                so two workers can't grab the same scheduled post.
+
+                Tested it by firing 20 threads at the same table and checking nothing got
+                claimed twice.
+
+                Postgres already had the tool for this. I just had to stop reaching for an
+                app-level lock first.
+
+                OUTPUT
+
+                Return ONLY JSON, no other text:
 
                 {
                   "headline":"",
@@ -104,5 +140,14 @@ public class LinkedInPromptBuilder {
                 Return JSON only.
                 """;
 
+    }
+
+    /** One retry after a banned-word violation: same prompt, plus the exact words to cut. */
+    public String buildRetry(AchievementEntity achievement, List<String> usedBannedWords) {
+        return build(achievement)
+                + "\n\nYour previous attempt used these banned words: "
+                + String.join(", ", usedBannedWords)
+                + ". Rewrite the whole post from scratch without them, following the same "
+                + "SHAPE, VOICE, and SUBSTANCE rules above. Return ONLY JSON in the same shape.";
     }
 }

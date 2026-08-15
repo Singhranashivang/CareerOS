@@ -69,7 +69,7 @@ class ScheduledPostRepositoryClaimLoopTest {
         user = userRepository.save(User.builder()
                 .githubId(System.nanoTime())
                 .username("claim-loop-user")
-                .encryptedGithubAccessToken("token")
+                .githubAccessToken("token")
                 .build());
     }
 

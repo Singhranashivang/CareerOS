@@ -3,6 +3,7 @@ package com.careeros.backend.achievement.generator;
 import com.careeros.backend.achievement.evidence.Evidence;
 import com.careeros.backend.achievement.extractor.Feature;
 import com.careeros.backend.achievement.knowledge.RepositoryKnowledge;
+import com.careeros.backend.achievement.llm.BannedVocabulary;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -58,6 +59,9 @@ WRITING STYLE
 - Never invent technologies.
 - Never invent metrics.
 - Keep the wording concise and natural.
+- Banned words and phrases, in any form, in the title, resumeBullet, and every
+  STAR field: """ + BannedVocabulary.PROMPT_LIST + """
+.
 
 GOOD EXAMPLES
 

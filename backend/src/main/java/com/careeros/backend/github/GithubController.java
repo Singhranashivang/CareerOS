@@ -4,6 +4,7 @@ import com.careeros.backend.github.dto.RepositoryResponse;
 import com.careeros.backend.githubcommit.GithubCommitService;
 import com.careeros.backend.githubpullrequest.GithubPullRequestService;
 import com.careeros.backend.security.CurrentUserService;
+import com.careeros.backend.user.GithubTokenEncryptor;
 import com.careeros.backend.user.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,7 @@ public class GithubController {
     private final GithubRepositoryRepository githubRepositoryRepository;
     private final GithubCommitService githubCommitService;
     private final GithubPullRequestService githubPullRequestService;
+    private final GithubTokenEncryptor githubTokenEncryptor;
 
     /** Reads from Postgres only. Never calls GitHub. */
     @GetMapping
@@ -53,7 +55,7 @@ public class GithubController {
             saved += githubCommitService.syncCommits(
                     repository,
                     user.getGithubId(),
-                    user.getEncryptedGithubAccessToken());
+                    githubTokenEncryptor.decrypt(user.getGithubAccessToken()));
         }
 
         // Reports commits, not repositories. The old message printed "30" while
@@ -70,7 +72,7 @@ public class GithubController {
         for (GithubRepository repository : repositories) {
             log.info("Syncing pull requests for {}", repository.getFullName());
             githubPullRequestService.syncPullRequests(
-                    repository, user.getEncryptedGithubAccessToken());
+                    repository, githubTokenEncryptor.decrypt(user.getGithubAccessToken()));
         }
         return "Synced pull requests for " + repositories.size() + " repositories";
     }
