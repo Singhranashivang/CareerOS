@@ -65,6 +65,11 @@
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
+			<groupId>com.bucket4j</groupId>
+			<artifactId>bucket4j_jdk17-core</artifactId>
+			<version>8.19.0</version>
+		</dependency>
+		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
@@ -149,6 +154,17 @@
 					<source>25</source>
 					<target>25</target>
 				</configuration>
+			</plugin>
+			<!--
+				Not bound to any lifecycle phase on purpose — a full NVD scan is
+				slow (minutes) and network-dependent, which would make every
+				`mvn test`/`mvn verify` pay that cost. Run it explicitly:
+				mvn org.owasp:dependency-check-maven:check
+			-->
+			<plugin>
+				<groupId>org.owasp</groupId>
+				<artifactId>dependency-check-maven</artifactId>
+				<version>13.0.0</version>
 			</plugin>
 		</plugins>
 	</build>

@@ -54,3 +54,14 @@ app.achievement.min-confidence=0.5
 # Post scheduling
 app.scheduling.enabled=true
 app.scheduling.worker-id=${HOSTNAME:local}
+
+# Session cookie. This is the value a real (HTTPS) deployment needs — secure
+# cookies are refused by the browser over plain HTTP, so local dev needs
+# this flipped to false in your own application.properties. Lax (not
+# Strict) is required for the GitHub OAuth redirect: the callback lands
+# here via a cross-site top-level GET navigation from github.com, which
+# Strict would drop the cookie on.
+server.servlet.session.cookie.http-only=true
+server.servlet.session.cookie.secure=true
+server.servlet.session.cookie.same-site=lax
+server.servlet.session.timeout=30m

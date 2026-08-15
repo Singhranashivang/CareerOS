@@ -32,6 +32,8 @@ import java.util.List;
 public class SecurityConfig {
 
     private final GithubOAuthSuccessHandler githubOAuthSuccessHandler;
+    private final RateLimitFilter rateLimitFilter;
+    private final MaxRequestBodySizeFilter maxRequestBodySizeFilter;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -40,6 +42,10 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
         http
+                // Wraps the request stream before anything else in the chain has a
+                // chance to read it, so a request over the cap is cut off during
+                // reading rather than after some other filter already buffered it.
+                .addFilterBefore(maxRequestBodySizeFilter, CsrfFilter.class)
                 // Cookie-based sessions + CORS allowCredentials(true) is exactly the
                 // configuration CSRF protection exists for: any origin can point a
                 // browser at an authenticated POST/PATCH/DELETE and the session
@@ -63,6 +69,10 @@ public class SecurityConfig {
                 // the frontend has nothing to read. Forces resolution on every
                 // request instead.
                 .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
+                // After CsrfCookieFilter, so the security context (and with it,
+                // the authenticated principal RateLimitFilter reads) is already
+                // restored from the session by this point in the chain.
+                .addFilterAfter(rateLimitFilter, CsrfCookieFilter.class)
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/", "/error", "/oauth2/**", "/login/**").permitAll()
@@ -94,6 +104,11 @@ public class SecurityConfig {
         config.setAllowedOrigins(List.of(frontendUrl));
         config.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
+        // Response headers are opt-in under CORS regardless of allowedHeaders (that
+        // list governs the request side). Retry-After is the only custom response
+        // header this API sets anywhere (RateLimitFilter) — without this, the
+        // browser silently drops it and the frontend reads null.
+        config.setExposedHeaders(List.of("Retry-After"));
         config.setAllowCredentials(true);
 
         var source = new UrlBasedCorsConfigurationSource();
