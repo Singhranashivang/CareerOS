@@ -71,6 +71,10 @@ public class AchievementEntity {
     @Column(columnDefinition = "TEXT")
     private String technologiesJson;
 
+    /** The cluster's commit SHAs (sorted JSON array) — cited SHAs are the cluster's, not the whole repository's. */
+    @Column(name = "cited_commit_shas_json", columnDefinition = "TEXT")
+    private String citedCommitShasJson;
+
     private double confidence;
 
     private LocalDateTime generatedAt;

@@ -1,13 +1,14 @@
 package com.careeros.backend.dashboard;
 
-import com.careeros.backend.achievement.linkedinrecord.LinkedInPostEntity;
 import com.careeros.backend.achievement.linkedinrecord.LinkedInPostPersistenceService;
+import com.careeros.backend.achievement.linkedinrecord.LinkedInPostResponse;
+import com.careeros.backend.achievement.recommendation.RecommendedRepositoryDto;
 import com.careeros.backend.achievement.recommendation.RepositoryRecommendation;
 import com.careeros.backend.achievement.recommendation.RepositoryRecommendationService;
-import com.careeros.backend.achievement.record.AchievementEntity;
-import com.careeros.backend.achievement.record.AchievementPersistenceService;
-import com.careeros.backend.achievement.weeklyrecord.WeeklyAchievementEntity;
+import com.careeros.backend.achievement.timeline.AchievementTimelineResponse;
+import com.careeros.backend.achievement.timeline.AchievementTimelineService;
 import com.careeros.backend.achievement.weeklyrecord.WeeklyAchievementPersistenceService;
+import com.careeros.backend.achievement.weeklyrecord.WeeklyAchievementResponse;
 import com.careeros.backend.github.GithubRepository;
 import com.careeros.backend.github.GithubRepositoryRepository;
 import com.careeros.backend.githubcommit.GithubCommitRepository;
@@ -25,7 +26,7 @@ public class DashboardService {
 
     private final RepositoryRecommendationService recommendationService;
     private final WeeklyAchievementPersistenceService weeklyService;
-    private final AchievementPersistenceService achievementService;
+    private final AchievementTimelineService achievementTimelineService;
     private final LinkedInPostPersistenceService linkedInService;
 
     private final GithubRepositoryRepository repositoryRepository;
@@ -46,36 +47,25 @@ public class DashboardService {
                 .mapToInt(r -> pullRequestRepository.findByRepository(r).size())
                 .sum();
 
-        RepositoryRecommendation recommendation =
+        RecommendedRepositoryDto recommendation =
                 recommendationService.recommend(user)
                         .stream()
                         .findFirst()
+                        .map(RepositoryRecommendation::toDto)
                         .orElse(null);
 
-        WeeklyAchievementEntity weeklySummary =
+        WeeklyAchievementResponse weeklySummary =
                 weeklyService.findLatest(user)
+                        .map(WeeklyAchievementResponse::from)
                         .orElse(null);
 
-        LinkedInPostEntity linkedInPost =
+        LinkedInPostResponse linkedInPost =
                 linkedInService.findLatestByUser(user)
+                        .map(LinkedInPostResponse::from)
                         .orElse(null);
 
-        List<AchievementEntity> achievements =
-                achievementService.findByUser(user);
-
-        System.out.println("==================================");
-        System.out.println("Achievement count = " + achievements.size());
-
-        for (AchievementEntity achievement : achievements) {
-            System.out.println(
-                    "Achievement: " +
-                            achievement.getTitle() +
-                            " | User ID = " +
-                            achievement.getUser().getId()
-            );
-        }
-
-        System.out.println("==================================");
+        List<AchievementTimelineResponse> achievements =
+                achievementTimelineService.timeline(user);
 
         DashboardStats stats = DashboardStats.builder()
                 .repositories(repositories.size())

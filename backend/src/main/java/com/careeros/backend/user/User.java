@@ -33,6 +33,10 @@ public class User {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
+    /** IANA zone id (e.g. "America/New_York"). Defaults to UTC — no settings UI to change it yet. */
+    @Column(nullable = false)
+    @Builder.Default
+    private String timezone = "UTC";
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

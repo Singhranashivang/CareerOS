@@ -17,8 +17,11 @@ public class LinkedInRecordController {
     private final CurrentUserService currentUserService;
 
     @GetMapping
-    public List<LinkedInPostEntity> list() {
+    public List<LinkedInPostResponse> list() {
         return linkedInPostRepository
-                .findByUserOrderByGeneratedAtDesc(currentUserService.require());
+                .findByUserOrderByGeneratedAtDesc(currentUserService.require())
+                .stream()
+                .map(LinkedInPostResponse::from)
+                .toList();
     }
 }

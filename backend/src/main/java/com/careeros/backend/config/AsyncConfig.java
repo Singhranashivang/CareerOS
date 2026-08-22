@@ -5,11 +5,18 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import java.time.Clock;
 import java.util.concurrent.Executor;
 
 @Configuration
 @EnableAsync
 public class AsyncConfig {
+
+    /** Injected rather than called directly so time-dependent logic (WeeklyDigestScheduler) is testable. */
+    @Bean
+    public Clock clock() {
+        return Clock.systemDefaultZone();
+    }
 
     /**
      * Kept small on purpose: Ollama is one local instance, so running more

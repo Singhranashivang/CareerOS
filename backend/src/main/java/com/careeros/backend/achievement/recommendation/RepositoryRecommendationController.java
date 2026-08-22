@@ -17,7 +17,10 @@ public class RepositoryRecommendationController {
     private final CurrentUserService currentUserService;
 
     @GetMapping("/recommendations")
-    public List<RepositoryRecommendation> recommendations() {
-        return repositoryRecommendationService.recommend(currentUserService.require());
+    public List<RecommendedRepositoryDto> recommendations() {
+        return repositoryRecommendationService.recommend(currentUserService.require())
+                .stream()
+                .map(RepositoryRecommendation::toDto)
+                .toList();
     }
 }

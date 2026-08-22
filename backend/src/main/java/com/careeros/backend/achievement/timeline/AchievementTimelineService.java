@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -19,6 +20,15 @@ public class AchievementTimelineService {
     public List<AchievementTimelineResponse> timeline(User user) {
 
         return achievementRepository.findByUserOrderByGeneratedAtDesc(user)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    /** Backs GET /api/digest/latest — achievements generated since a given point (the last digest run). */
+    @Transactional(readOnly = true)
+    public List<AchievementTimelineResponse> since(User user, LocalDateTime after) {
+        return achievementRepository.findByUserAndGeneratedAtAfterOrderByGeneratedAtDesc(user, after)
                 .stream()
                 .map(this::toResponse)
                 .toList();

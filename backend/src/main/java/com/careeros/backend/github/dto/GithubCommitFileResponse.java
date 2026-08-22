@@ -14,4 +14,7 @@ public class GithubCommitFileResponse {
 
     /** added, modified, removed, renamed */
     private String status;
+
+    /** Unified diff text. GitHub omits this for very large files — null, not absent-and-erroring. */
+    private String patch;
 }

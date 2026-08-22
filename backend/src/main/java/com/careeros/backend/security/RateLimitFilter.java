@@ -1,5 +1,9 @@
 package com.careeros.backend.security;
 
+import com.careeros.backend.audit.AuditAction;
+import com.careeros.backend.audit.AuditLogService;
+import com.careeros.backend.audit.AuditOutcome;
+import com.careeros.backend.user.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.bucket4j.ConsumptionProbe;
 import jakarta.servlet.FilterChain;
@@ -50,12 +54,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
             rule(HttpMethod.GET, "/achievement/weekly", RateLimitTier.ANALYZE),
             rule(HttpMethod.GET, "/knowledge/generate", RateLimitTier.ANALYZE),
             rule(HttpMethod.GET, "/achievement/star", RateLimitTier.ANALYZE),
-            rule(HttpMethod.POST, "/achievement/linkedin/*", RateLimitTier.ANALYZE),
+            rule(HttpMethod.POST, "/achievement/linkedin/*", RateLimitTier.LINKEDIN_POST),
             rule(HttpMethod.POST, "/api/onboarding/start", RateLimitTier.ANALYZE)
     );
 
     private final RateLimiter rateLimiter;
     private final ObjectMapper objectMapper;
+    private final UserRepository userRepository;
+    private final AuditLogService auditLogService;
 
     @Override
     protected void doFilterInternal(
@@ -77,6 +83,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
         }
 
         long retryAfterSeconds = Math.max(1, Math.ceilDiv(probe.getNanosToWaitForRefill(), 1_000_000_000L));
+
+        // Only resolved here, on the rejection path — every allowed request stays
+        // free of this DB lookup, same reasoning as using the raw githubId as the
+        // rate-limit key above instead of the full User.
+        userRepository.findByGithubId(githubId).ifPresent(user ->
+                auditLogService.record(user, AuditAction.RATE_LIMIT_REJECTED,
+                        request.getRequestURI(), AuditOutcome.FAILURE));
 
         response.setStatus(429);
         response.setHeader("Retry-After", String.valueOf(retryAfterSeconds));

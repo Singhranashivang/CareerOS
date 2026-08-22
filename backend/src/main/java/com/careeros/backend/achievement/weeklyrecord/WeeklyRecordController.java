@@ -17,8 +17,11 @@ public class WeeklyRecordController {
     private final CurrentUserService currentUserService;
 
     @GetMapping
-    public List<WeeklyAchievementEntity> list() {
+    public List<WeeklyAchievementResponse> list() {
         return weeklyAchievementRepository
-                .findByUserOrderByGeneratedAtDesc(currentUserService.require());
+                .findByUserOrderByGeneratedAtDesc(currentUserService.require())
+                .stream()
+                .map(WeeklyAchievementResponse::from)
+                .toList();
     }
 }

@@ -1,6 +1,7 @@
 package com.careeros.backend.achievement.engine;
 
 import com.careeros.backend.achievement.evidence.Evidence;
+import com.careeros.backend.achievement.generator.AchievementOutput;
 import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
@@ -42,15 +43,36 @@ public class GroundingValidator {
      * claim shares no meaningful token with the evidence.
      */
     public Optional<String> ungroundedReason(String title, String resumeBullet, Evidence evidence) {
-
         Set<String> claimTokens = new HashSet<>();
         claimTokens.addAll(tokenize(title));
         claimTokens.addAll(tokenize(resumeBullet));
+        return ungroundedReason(claimTokens, evidence);
+    }
+
+    /**
+     * Tokenizes every non-blank field, not just title/resumeBullet — since
+     * STAR fields are now individually optional, the only grounded content
+     * on a given achievement might live entirely in starAction or
+     * starResult, and title+resumeBullet alone would look ungrounded even
+     * though the achievement is fine.
+     */
+    public Optional<String> ungroundedReason(AchievementOutput output, Evidence evidence) {
+        Set<String> claimTokens = new HashSet<>();
+        claimTokens.addAll(tokenize(output.getTitle()));
+        claimTokens.addAll(tokenize(output.getResumeBullet()));
+        claimTokens.addAll(tokenize(output.getStarSituation()));
+        claimTokens.addAll(tokenize(output.getStarTask()));
+        claimTokens.addAll(tokenize(output.getStarAction()));
+        claimTokens.addAll(tokenize(output.getStarResult()));
+        return ungroundedReason(claimTokens, evidence);
+    }
+
+    private Optional<String> ungroundedReason(Set<String> claimTokens, Evidence evidence) {
 
         if (claimTokens.isEmpty()) {
             // Nothing to check against — the blank-field check upstream
             // already rejects this case, but don't claim "grounded" for it.
-            return Optional.of("title/resumeBullet had no meaningful words to check");
+            return Optional.of("no field had any meaningful words to check");
         }
 
         Set<String> vocabulary = evidenceVocabulary(evidence);
@@ -62,7 +84,7 @@ public class GroundingValidator {
         }
 
         return Optional.of(
-                "no word in the title/resumeBullet matches a filename or commit message term");
+                "no word in any field matches a filename or commit message term");
     }
 
     private static Set<String> evidenceVocabulary(Evidence evidence) {

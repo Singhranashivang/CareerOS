@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,6 +25,14 @@ public interface AchievementRepository
 
     boolean existsByUserAndRepositoryNameAndTitle(
             User user, String repositoryName, String title);
+
+    /** Dedup key for the per-cluster generator — the citedCommitShasJson column is always sorted before saving. */
+    boolean existsByUserAndRepositoryNameAndCitedCommitShasJson(
+            User user, String repositoryName, String citedCommitShasJson);
+
+    /** Backs GET /api/digest/latest — "this week's" achievements, since the latest digest run. */
+    List<AchievementEntity> findByUserAndGeneratedAtAfterOrderByGeneratedAtDesc(
+            User user, LocalDateTime after);
 
     @Query("""
            select a.repository.id as repositoryId, count(a) as total

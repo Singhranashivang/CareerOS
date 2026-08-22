@@ -39,6 +39,15 @@ class RateLimiterTest {
     }
 
     @Test
+    void linkedinPostAllowsTenThenRejectsTheEleventh() {
+        for (int i = 0; i < 10; i++) {
+            assertThat(rateLimiter.tryConsume(4L, RateLimitTier.LINKEDIN_POST).isConsumed()).isTrue();
+        }
+
+        assertThat(rateLimiter.tryConsume(4L, RateLimitTier.LINKEDIN_POST).isConsumed()).isFalse();
+    }
+
+    @Test
     void differentUsersGetIndependentBuckets() {
         for (int i = 0; i < 3; i++) {
             rateLimiter.tryConsume(10L, RateLimitTier.ANALYZE);

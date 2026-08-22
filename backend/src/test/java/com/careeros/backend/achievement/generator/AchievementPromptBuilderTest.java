@@ -72,6 +72,18 @@ class AchievementPromptBuilderTest {
     }
 
     @Test
+    void diffsAreLabelledAsSourceCodeNotProse() {
+        Evidence evidence = Evidence.builder()
+                .diffs(List.of("Foo.java:\n+ int x = 1;"))
+                .build();
+
+        String prompt = builder.build(emptyKnowledge(), evidence);
+
+        assertThat(prompt).contains("Diffs (raw source code, not prose");
+        assertThat(prompt).contains("runtime behaviour");
+    }
+
+    @Test
     void aSmallEvidenceSetIsListedInFullWithNoSummaryLine() {
         Evidence evidence = Evidence.builder()
                 .changedFiles(List.of("Foo.java", "Bar.java"))

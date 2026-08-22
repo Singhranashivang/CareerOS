@@ -39,35 +39,7 @@ public class RepositoryKnowledgeService {
                 repositoryKnowledgePersistenceService.findByRepository(repository);
 
         if (existing.isPresent()) {
-
-            RepositoryKnowledgeEntity entity = existing.get();
-
-            try {
-
-                // Passing an explicit null to the builder overrides
-                // @Builder.Default, so every list is read through readList().
-                return RepositoryKnowledge.builder()
-                        .repositoryName(repository.getName())
-                        .projectType(entity.getProjectType())
-                        .domain(entity.getDomain())
-                        .technologies(readList(entity.getTechnologiesJson()))
-                        .architecture(readList(entity.getArchitectureJson()))
-                        .features(readList(entity.getFeaturesJson()))
-                        .developerContributions(
-                                readList(entity.getDeveloperContributionsJson()))
-                        .confidence(entity.getConfidence())
-                        .build();
-
-            } catch (Exception e) {
-
-                throw new RuntimeException(
-                        "Failed to read cached repository knowledge for "
-                                + repository.getFullName(),
-                        e
-                );
-
-            }
-
+            return toKnowledge(repository, existing.get());
         }
 
         var commits =
@@ -156,6 +128,37 @@ public class RepositoryKnowledgeService {
 
         }
 
+    }
+
+    /**
+     * The stored-entity shape, converted to the same {@link RepositoryKnowledge}
+     * the frontend gets from a fresh generation — never return
+     * {@link RepositoryKnowledgeEntity} itself across an HTTP boundary,
+     * lazy-proxy fields aside, it's the persistence type, not a response type.
+     */
+    public RepositoryKnowledge toKnowledge(GithubRepository repository, RepositoryKnowledgeEntity entity) {
+        try {
+            // Passing an explicit null to the builder overrides
+            // @Builder.Default, so every list is read through readList().
+            return RepositoryKnowledge.builder()
+                    .repositoryName(repository.getName())
+                    .projectType(entity.getProjectType())
+                    .domain(entity.getDomain())
+                    .technologies(readList(entity.getTechnologiesJson()))
+                    .architecture(readList(entity.getArchitectureJson()))
+                    .features(readList(entity.getFeaturesJson()))
+                    .developerContributions(
+                            readList(entity.getDeveloperContributionsJson()))
+                    .confidence(entity.getConfidence())
+                    .build();
+
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    "Failed to read cached repository knowledge for "
+                            + repository.getFullName(),
+                    e
+            );
+        }
     }
 
     /**

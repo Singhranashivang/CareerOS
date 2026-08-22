@@ -18,7 +18,10 @@ public enum RateLimitTier {
     SYNC(Bandwidth.classic(5, Refill.intervally(5, Duration.ofMinutes(5)))),
 
     /** Calls the local LLM (serialized on one Ollama instance) and/or fetches GitHub evidence. Minutes per call. */
-    ANALYZE(Bandwidth.classic(3, Refill.intervally(3, Duration.ofMinutes(10))));
+    ANALYZE(Bandwidth.classic(3, Refill.intervally(3, Duration.ofMinutes(10)))),
+
+    /** One LLM call against an already-generated achievement, no GitHub evidence fetch — cheaper than ANALYZE. */
+    LINKEDIN_POST(Bandwidth.classic(10, Refill.intervally(10, Duration.ofMinutes(10))));
 
     private final Bandwidth bandwidth;
 

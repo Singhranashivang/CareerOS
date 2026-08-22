@@ -161,4 +161,24 @@ public class GithubApiService {
         }
     }
 
+    /** Empty when the commit isn't part of any pull request — the normal case for most commits. */
+    public List<GithubPullRequestSummary> getPullRequestsForCommit(
+            String owner, String repo, String sha, String accessToken) {
+        try {
+            List<GithubPullRequestSummary> response = restClient.get()
+                    .uri("https://api.github.com/repos/{owner}/{repo}/commits/{sha}/pulls",
+                            owner, repo, sha)
+                    .header("Authorization", "Bearer " + accessToken)
+                    .header("Accept", "application/vnd.github+json")
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<GithubPullRequestSummary>>() {});
+
+            return response == null ? List.of() : response;
+        } catch (Exception e) {
+            log.warn("Could not fetch pull requests for commit {} in {}/{}: {}",
+                    sha, owner, repo, e.getMessage());
+            return List.of();
+        }
+    }
+
 }

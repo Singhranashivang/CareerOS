@@ -18,6 +18,7 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -34,6 +35,7 @@ public class SecurityConfig {
     private final GithubOAuthSuccessHandler githubOAuthSuccessHandler;
     private final RateLimitFilter rateLimitFilter;
     private final MaxRequestBodySizeFilter maxRequestBodySizeFilter;
+    private final AuditingLogoutSuccessHandler auditingLogoutSuccessHandler;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -73,6 +75,34 @@ public class SecurityConfig {
                 // the authenticated principal RateLimitFilter reads) is already
                 // restored from the session by this point in the chain.
                 .addFilterAfter(rateLimitFilter, CsrfCookieFilter.class)
+                // Adds to HeadersConfigurer's existing defaults (X-Content-Type-Options,
+                // X-Frame-Options, Cache-Control, X-XSS-Protection, and HSTS — already
+                // registered even though .headers() was never called before this) rather
+                // than replacing them; each .xxx(...) call configures the one shared
+                // HeadersConfigurer instance HttpSecurity applies automatically.
+                .headers(headers -> headers
+                        // This API renders almost no HTML of its own — Spring Security's
+                        // auto-generated /login page (no custom one is configured) and the
+                        // default Whitelabel error page are the only two pages this default-src
+                        // 'none' actually affects. The real login flow is expected to link the
+                        // frontend straight to /oauth2/authorization/github, bypassing /login
+                        // entirely, so it losing its inline <style> costs nothing real.
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(
+                                "default-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"))
+                        .referrerPolicy(referrer -> referrer
+                                .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        // This app never asks for camera/microphone/geolocation from any
+                        // browser context it controls — deny all three outright.
+                        // permissionsPolicyHeader (not permissionsPolicy) is the overload that
+                        // returns HeadersConfigurer for chaining — an API quirk, not a typo.
+                        .permissionsPolicyHeader(pp -> pp.policy("camera=(), microphone=(), geolocation=()"))
+                        // Already active by default whenever a request is HTTPS (HstsHeaderWriter
+                        // self-gates on request.isSecure()) — made explicit rather than left as
+                        // an inherited default, same as the values below already match Spring's
+                        // own defaults.
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .maxAgeInSeconds(31536000)))
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/", "/error", "/oauth2/**", "/login/**").permitAll()
@@ -89,8 +119,7 @@ public class SecurityConfig {
                 )
                 .logout(logout -> logout
                         .logoutUrl("/api/logout")
-                        .logoutSuccessHandler((req, res, auth) ->
-                                res.setStatus(HttpStatus.NO_CONTENT.value()))
+                        .logoutSuccessHandler(auditingLogoutSuccessHandler)
                         .invalidateHttpSession(true)
                         .deleteCookies("JSESSIONID")
                 );

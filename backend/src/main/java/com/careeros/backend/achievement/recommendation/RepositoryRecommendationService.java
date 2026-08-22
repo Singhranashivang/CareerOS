@@ -76,6 +76,7 @@ public class RepositoryRecommendationService {
             recommendations.add(
                     RepositoryRecommendation.builder()
                             .repository(repository)
+                            .commitCount(commitCount)
                             .score(score)
                             .reasons(reasons)
                             .build()

@@ -1,5 +1,10 @@
 package com.careeros.backend.security;
 
+import com.careeros.backend.audit.AuditAction;
+import com.careeros.backend.audit.AuditLogService;
+import com.careeros.backend.audit.AuditOutcome;
+import com.careeros.backend.user.User;
+import com.careeros.backend.user.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.bucket4j.ConsumptionProbe;
 import org.junit.jupiter.api.AfterEach;
@@ -11,6 +16,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,7 +29,10 @@ import static org.mockito.Mockito.when;
 class RateLimitFilterTest {
 
     private final RateLimiter rateLimiter = mock(RateLimiter.class);
-    private final RateLimitFilter filter = new RateLimitFilter(rateLimiter, new ObjectMapper());
+    private final UserRepository userRepository = mock(UserRepository.class);
+    private final AuditLogService auditLogService = mock(AuditLogService.class);
+    private final RateLimitFilter filter =
+            new RateLimitFilter(rateLimiter, new ObjectMapper(), userRepository, auditLogService);
 
     @AfterEach
     void clearSecurityContext() {
@@ -123,8 +132,8 @@ class RateLimitFilterTest {
     }
 
     @Test
-    void linkedinPostGenerationUsesTheAnalyzeTier() throws Exception {
-        assertPassesThrough("POST", "/achievement/linkedin/45", RateLimitTier.ANALYZE);
+    void linkedinPostGenerationUsesItsOwnCheaperTier() throws Exception {
+        assertPassesThrough("POST", "/achievement/linkedin/45", RateLimitTier.LINKEDIN_POST);
     }
 
     @Test
@@ -143,6 +152,8 @@ class RateLimitFilterTest {
         authenticateAs(9L);
         when(rateLimiter.tryConsume(9L, RateLimitTier.ANALYZE))
                 .thenReturn(ConsumptionProbe.rejected(0, TimeUnit.SECONDS.toNanos(42), 0));
+        User user = User.builder().id(1L).githubId(9L).build();
+        when(userRepository.findByGithubId(9L)).thenReturn(Optional.of(user));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
@@ -155,5 +166,7 @@ class RateLimitFilterTest {
                 .contains("rate_limit_exceeded")
                 .contains("ANALYZE");
         assertThat(chain.getRequest()).as("the controller must never see a rejected request").isNull();
+        verify(auditLogService).record(user, AuditAction.RATE_LIMIT_REJECTED,
+                "/api/repositories/5/analyze", AuditOutcome.FAILURE);
     }
 }

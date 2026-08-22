@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
  * lines of which 132 were authored, another 271,505 of which 387 were. Counting
  * those is the mirror of counting padded commits.
  */
-final class GeneratedFilePaths {
+public final class GeneratedFilePaths {
 
     /**
      * db/migration/ (Flyway, hand-written) is deliberately NOT matched by the
@@ -42,7 +42,7 @@ final class GeneratedFilePaths {
     private GeneratedFilePaths() {
     }
 
-    static boolean isGenerated(String path) {
+    public static boolean isGenerated(String path) {
         return path != null && GENERATED.matcher(path).find();
     }
 }

@@ -1,7 +1,6 @@
 package com.careeros.backend.achievement.knowledge;
 
 import com.careeros.backend.github.GithubRepositoryRepository;
-import com.careeros.backend.repositoryknowledge.RepositoryKnowledgeEntity;
 import com.careeros.backend.repositoryknowledge.RepositoryKnowledgePersistenceService;
 import com.careeros.backend.security.CurrentUserService;
 import com.careeros.backend.user.GithubTokenEncryptor;
@@ -40,13 +39,15 @@ public class RepositoryKnowledgeController {
 
     // Step 7 adds the ownership check here.
     @GetMapping("/{repositoryId}")
-    public RepositoryKnowledgeEntity getKnowledge(@PathVariable Long repositoryId) {
+    public RepositoryKnowledge getKnowledge(@PathVariable Long repositoryId) {
 
         User user = currentUserService.require();
         var repository = githubRepositoryService.requireOwned(user, repositoryId);
 
-        return repositoryKnowledgePersistenceService
+        var entity = repositoryKnowledgePersistenceService
                 .findByRepository(repository)
                 .orElseThrow(() -> new RuntimeException("Knowledge not found"));
+
+        return repositoryKnowledgeService.toKnowledge(repository, entity);
     }
 }

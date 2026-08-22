@@ -102,8 +102,9 @@ public class OnboardingService {
                 onboardingRunService.analyzing(runId, repository.getName());
                 boolean achievementCreated = false;
                 try {
-                    var output = achievementGeneratorService.generate(repository, accessToken);
-                    achievementCreated = output != null && !output.isInsufficient();
+                    var outputs = achievementGeneratorService.generate(repository, accessToken);
+                    achievementCreated = outputs != null
+                            && outputs.stream().anyMatch(output -> !output.isInsufficient());
                 } catch (Exception e) {
                     // AchievementGeneratorService already records the ERROR outcome
                     // on the repository; here we just keep the run moving.

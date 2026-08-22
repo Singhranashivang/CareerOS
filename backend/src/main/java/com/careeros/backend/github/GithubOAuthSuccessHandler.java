@@ -1,5 +1,9 @@
 package com.careeros.backend.github;
 
+import com.careeros.backend.audit.AuditAction;
+import com.careeros.backend.audit.AuditLogService;
+import com.careeros.backend.audit.AuditOutcome;
+import com.careeros.backend.user.User;
 import com.careeros.backend.user.UserService;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,6 +26,7 @@ public class GithubOAuthSuccessHandler implements AuthenticationSuccessHandler {
 
     private final UserService userService;
     private final OAuth2AuthorizedClientService authorizedClientService;
+    private final AuditLogService auditLogService;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -48,7 +53,7 @@ public class GithubOAuthSuccessHandler implements AuthenticationSuccessHandler {
 
         String accessToken = client.getAccessToken().getTokenValue();
 
-        userService.createOrUpdateGitHubUser(
+        User user = userService.createOrUpdateGitHubUser(
                 githubId.longValue(),
                 githubUser.getAttribute("login"),
                 githubUser.getAttribute("name"),
@@ -56,6 +61,8 @@ public class GithubOAuthSuccessHandler implements AuthenticationSuccessHandler {
                 githubUser.getAttribute("avatar_url"),
                 accessToken
         );
+
+        auditLogService.record(user, AuditAction.SIGN_IN, null, AuditOutcome.SUCCESS);
 
         response.sendRedirect(frontendUrl + "/dashboard");
     }

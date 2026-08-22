@@ -1,7 +1,11 @@
 package com.careeros.backend.achievement.generator;
 
+import com.careeros.backend.achievement.cluster.CommitCluster;
+import com.careeros.backend.achievement.cluster.CommitClusterer;
 import com.careeros.backend.achievement.engine.AchievementConfidenceCalculator;
 import com.careeros.backend.achievement.engine.AchievementConfidenceGate;
+import com.careeros.backend.achievement.engine.AchievementFabricationValidator;
+import com.careeros.backend.achievement.engine.AchievementSemanticDedupeValidator;
 import com.careeros.backend.achievement.engine.EvidenceSufficiency;
 import com.careeros.backend.achievement.engine.GroundingValidator;
 import com.careeros.backend.achievement.evidence.Evidence;
@@ -17,15 +21,18 @@ import com.careeros.backend.achievement.record.AchievementSource;
 import com.careeros.backend.github.AnalysisOutcome;
 import com.careeros.backend.github.GithubRepository;
 import com.careeros.backend.github.RepositoryAnalysisRecorder;
+import com.careeros.backend.githubcommit.GithubCommit;
 import com.careeros.backend.githubcommit.GithubCommitRepository;
-import com.careeros.backend.githubpullrequest.GithubPullRequestRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -33,9 +40,9 @@ import java.time.LocalDateTime;
 public class AchievementGeneratorService {
 
     private final GithubCommitRepository githubCommitRepository;
-    private final GithubPullRequestRepository githubPullRequestRepository;
 
     private final CommitFilter commitFilter;
+    private final CommitClusterer commitClusterer;
     private final EvidenceBuilder evidenceBuilder;
     private final RepositoryKnowledgeService repositoryKnowledgeService;
 
@@ -45,6 +52,8 @@ public class AchievementGeneratorService {
     private final AchievementConfidenceCalculator confidenceCalculator;
     private final AchievementConfidenceGate confidenceGate;
     private final GroundingValidator groundingValidator;
+    private final AchievementFabricationValidator fabricationValidator;
+    private final AchievementSemanticDedupeValidator semanticDedupeValidator;
     private final EvidenceSufficiency evidenceSufficiency;
     private final AchievementPersistenceService achievementPersistenceService;
     private final AchievementRepository achievementRepository;
@@ -52,13 +61,17 @@ public class AchievementGeneratorService {
 
     private final ObjectMapper objectMapper;
 
+    /** Keeps one large repository from turning a single analyze click into an hour-long run. */
+    @Value("${app.achievement.cluster.max-per-run:5}")
+    private int maxClustersPerRun;
+
     /**
      * Every exit records an outcome on the repository. Without that, a repo that
      * was analysed and declined looks exactly like one never analysed, and the
      * Analyze button appears to do nothing.
      */
     @Transactional
-    public AchievementOutput generate(GithubRepository repository, String accessToken) {
+    public List<AchievementOutput> generate(GithubRepository repository, String accessToken) {
 
         try {
             return analyse(repository, accessToken);
@@ -74,112 +87,154 @@ public class AchievementGeneratorService {
         }
     }
 
-    private AchievementOutput analyse(GithubRepository repository, String accessToken) {
+    /**
+     * The unit of reasoning is a commit cluster, not the repository: one LLM
+     * call per cluster, so a repository can produce several achievements or
+     * none. Clusters come back ordered most-recent-first (CommitClusterer);
+     * maxClustersPerRun caps how many of those get analysed.
+     */
+    private List<AchievementOutput> analyse(GithubRepository repository, String accessToken) {
 
         var commits = commitFilter.filter(githubCommitRepository.findByRepository(repository));
-        var pullRequests = githubPullRequestRepository.findByRepository(repository);
+        var clusters = commitClusterer.cluster(repository, commits, accessToken);
 
-        Evidence evidence = evidenceBuilder.build(
-                repository,
-                commits,
-                pullRequests,
-                accessToken
-        );
+        if (clusters.isEmpty()) {
+            String reason = "No group of commits met the clustering threshold "
+                    + "(time proximity + shared source area)";
+            log.info("No achievement for {}: {}", repository.getFullName(), reason);
+            analysisRecorder.record(repository.getId(), AnalysisOutcome.INSUFFICIENT, reason);
+            return List.of(AchievementOutput.builder().insufficient(true).reason(reason).build());
+        }
 
-        // Before any LLM call, including the knowledge one below. A repository
-        // the user barely touched has nothing to claim, and asking anyway just
-        // produces a paraphrase of its name.
+        var toAnalyze = clusters.size() > maxClustersPerRun
+                ? clusters.subList(0, maxClustersPerRun)
+                : clusters;
+
+        // Repository-level context (project type, domain, tech stack) is shared
+        // across every cluster in this run — one call, not one per cluster.
+        RepositoryKnowledge knowledge = repositoryKnowledgeService.generate(repository, accessToken);
+
+        List<AchievementOutput> outputs = new ArrayList<>();
+        int achievementCount = 0;
+
+        for (CommitCluster cluster : toAnalyze) {
+            AchievementOutput output = analyseCluster(repository, knowledge, cluster, accessToken);
+            outputs.add(output);
+            if (!output.isInsufficient()) {
+                achievementCount++;
+            }
+        }
+
+        String summary = achievementCount > 0
+                ? "Generated %d achievement(s) from %d cluster(s) (%d commits analysed)".formatted(
+                        achievementCount, toAnalyze.size(), commits.size())
+                : "No cluster produced a grounded achievement (%d cluster(s) analysed)".formatted(
+                        toAnalyze.size());
+
+        analysisRecorder.record(repository.getId(),
+                achievementCount > 0 ? AnalysisOutcome.ACHIEVEMENT : AnalysisOutcome.INSUFFICIENT,
+                summary);
+
+        return outputs;
+    }
+
+    /**
+     * One cluster through the full pipeline: evidence, sufficiency floor, LLM
+     * call (with the one-retry-on-drift already used per repository),
+     * grounding, confidence gate, dedupe on the cluster's own commit set, and
+     * persistence. Never throws for an ordinary "nothing here" outcome — only
+     * for a grounding failure, which the caller (and its @Transactional
+     * rollback + ERROR outcome) already treats as a real failure.
+     */
+    private AchievementOutput analyseCluster(
+            GithubRepository repository,
+            RepositoryKnowledge knowledge,
+            CommitCluster cluster,
+            String accessToken
+    ) {
+        String label = repository.getFullName() + " cluster " + clusterLabel(cluster);
+
+        Evidence evidence = evidenceBuilder.buildForCluster(repository, cluster, accessToken);
+
         var shortfall = evidenceSufficiency.shortfall(evidence);
         if (shortfall.isPresent()) {
-            log.info("No achievement for {}: {}",
-                    repository.getFullName(), shortfall.get());
-            analysisRecorder.record(repository.getId(),
-                    AnalysisOutcome.INSUFFICIENT, shortfall.get());
-            return AchievementOutput.builder()
-                    .insufficient(true)
-                    .reason(shortfall.get())
-                    .build();
+            log.info("No achievement for {}: {}", label, shortfall.get());
+            return AchievementOutput.builder().insufficient(true).reason(shortfall.get()).build();
         }
 
-        RepositoryKnowledge knowledge =
-                repositoryKnowledgeService.generate(repository, accessToken);
-
-        // One retry, with a shortened prompt, before giving up. Schema drift
-        // on a large repo was caused by Ollama truncating the prompt to its
-        // context window — the shortened prompt has much smaller evidence
-        // caps, so it needs far fewer tokens even if num_ctx still isn't
-        // enough for the full one.
-        AchievementOutput output;
-        try {
-            output = requestAchievement(repository, knowledge, evidence, false);
-        } catch (SchemaDriftException first) {
-            log.warn("Schema drift for {} ({}) — retrying once with a shortened prompt",
-                    repository.getFullName(), first.getMessage());
-            output = requestAchievement(repository, knowledge, evidence, true);
-        }
-
-        // The model's own refusal. A normal outcome — return it unpersisted so
-        // the caller can distinguish "analysed, nothing to claim" from a failure.
+        AchievementOutput output = requestAndValidate(repository, knowledge, evidence, label, null, null);
         if (output.isInsufficient()) {
-            String reason = output.getReason() == null || output.getReason().isBlank()
-                    ? "The evidence did not support a specific achievement"
-                    : output.getReason();
-            log.info("Model declined to claim an achievement for {}: {}",
-                    repository.getFullName(), reason);
-            analysisRecorder.record(repository.getId(),
-                    AnalysisOutcome.INSUFFICIENT, reason);
             return output;
         }
 
-        // The shape is right, but is it actually about this repository? A
-        // model that ignores "never invent" can produce a well-formed STAR
-        // story for work that never happened. If nothing in the title or
-        // resumeBullet matches a filename or commit message, there's no
-        // basis to believe it's grounded in this evidence rather than
-        // hallucinated — reject it the same as a schema failure.
-        var ungroundedReason = groundingValidator.ungroundedReason(
-                output.getTitle(), output.getResumeBullet(), evidence);
-        if (ungroundedReason.isPresent()) {
-            log.warn("Achievement response for {} is not grounded in the evidence: {}. "
-                            + "title=\"{}\" resumeBullet=\"{}\"",
-                    repository.getFullName(), ungroundedReason.get(),
-                    output.getTitle(), output.getResumeBullet());
-            throw new RuntimeException(
-                    "the model's claim is not grounded in the evidence: " + ungroundedReason.get());
-        }
-
-        // Scored from the evidence, not from the model's opinion of itself.
+        // Evidence-derived, not output-derived — the same value regardless of
+        // which attempt (first pass or the "describe only what's new" retry
+        // below) ends up being persisted, so this only needs computing once.
         double confidence = confidenceCalculator.calculate(evidence);
 
-        // Below the floor: this isn't a failure, the model just didn't have
-        // enough independent evidence backing it up. Same treatment as the
-        // evidence-sufficiency shortfall above — INSUFFICIENT, not ERROR.
         if (!confidenceGate.passes(confidence)) {
             String reason = confidenceGate.reasonBelowThreshold(confidence);
-            log.info("Not persisting achievement for {}: {}", repository.getFullName(), reason);
-            analysisRecorder.record(repository.getId(), AnalysisOutcome.INSUFFICIENT, reason);
+            log.info("Not persisting achievement for {}: {}", label, reason);
             return AchievementOutput.builder()
-                    .insufficient(true)
-                    .reason(reason)
-                    .confidence(confidence)
-                    .build();
+                    .insufficient(true).reason(reason).confidence(confidence).build();
         }
 
-        // Regenerating on an already-analysed repo is normal; a duplicate row
-        // is not. The unique index would throw here, so check first and return
-        // the existing result instead of failing the request.
-        if (achievementRepository.existsByUserAndRepositoryNameAndTitle(
-                repository.getUser(), repository.getName(), output.getTitle())) {
+        String citedShasJson = citedCommitShasJson(cluster);
 
-            log.info("Achievement '{}' already exists for {} — skipping save",
-                    output.getTitle(), repository.getFullName());
-            analysisRecorder.record(repository.getId(), AnalysisOutcome.ACHIEVEMENT,
-                    "Already recorded: " + output.getTitle());
+        // Dedup on the cluster's commit set rather than title: regenerating a
+        // repo re-clusters the same commits into the same groups, and the
+        // model can phrase the same cluster differently on each attempt.
+        if (achievementRepository.existsByUserAndRepositoryNameAndCitedCommitShasJson(
+                repository.getUser(), repository.getName(), citedShasJson)) {
+
+            log.info("Achievement for {} already exists for this commit set — skipping save", label);
             return output;
         }
 
-        log.info("Generated achievement for {} with confidence {}",
-                repository.getFullName(), confidence);
+        // Exact-SHA dedup only catches the SAME cluster regenerated. It can't
+        // catch two different clusters, weeks apart, that both touch the same
+        // subsystem — commit-set dedup sees no overlap there at all. Compare
+        // text against every existing achievement for this repository instead.
+        var existingForRepository = repository.getId() == null
+                ? List.<AchievementEntity>of()
+                : achievementRepository.findByRepositoryIdOrderByGeneratedAtDesc(repository.getId());
+
+        var semanticDuplicate = semanticDedupeValidator.duplicateOf(
+                output.getTitle(), output.getResumeBullet(), existingForRepository);
+
+        if (semanticDuplicate.isPresent()) {
+            AchievementEntity priorWork = semanticDuplicate.get();
+
+            // Not an automatic reject: the same subsystem worked on twice,
+            // weeks apart, is two real achievements, not one. Give the model
+            // the prior achievement and ask it to describe only what's new;
+            // only reject if it still can't produce anything distinct.
+            log.info("Achievement for {} overlaps existing \"{}\" — regenerating to describe only what's new",
+                    label, priorWork.getTitle());
+
+            AchievementOutput retried = requestAndValidate(
+                    repository, knowledge, evidence, label, priorWork.getTitle(), priorWork.getResumeBullet());
+
+            if (retried.isInsufficient()) {
+                // The model itself found nothing new relative to the prior work.
+                return retried;
+            }
+
+            var stillDuplicate = semanticDedupeValidator.duplicateOf(
+                    retried.getTitle(), retried.getResumeBullet(), existingForRepository);
+
+            if (stillDuplicate.isPresent()) {
+                String reason = "Still substantially overlaps an existing achievement after describing "
+                        + "only what's new: \"" + stillDuplicate.get().getTitle() + "\"";
+                log.info("Not persisting achievement for {}: {}", label, reason);
+                return AchievementOutput.builder()
+                        .insufficient(true).reason(reason).confidence(confidence).build();
+            }
+
+            output = retried;
+        }
+
+        log.info("Generated achievement for {} with confidence {}", label, confidence);
 
         AchievementEntity entity = AchievementEntity.builder()
                 .user(repository.getUser())
@@ -192,14 +247,89 @@ public class AchievementGeneratorService {
                 .starTask(output.getStarTask())
                 .starAction(output.getStarAction())
                 .starResult(output.getStarResult())
+                .citedCommitShasJson(citedShasJson)
                 .confidence(confidence)
                 .generatedAt(LocalDateTime.now())
                 .build();
 
         achievementPersistenceService.saveEntity(entity);
 
-        analysisRecorder.record(repository.getId(), AnalysisOutcome.ACHIEVEMENT,
-                "Generated: " + output.getTitle());
+        return output;
+    }
+
+    /** Sorted so the same commit set always serializes to the same string — the dedup key. */
+    private String citedCommitShasJson(CommitCluster cluster) {
+        try {
+            List<String> shas = cluster.commits().stream()
+                    .map(GithubCommit::getGithubCommitSha)
+                    .sorted()
+                    .toList();
+            return objectMapper.writeValueAsString(shas);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize cluster commit SHAs", e);
+        }
+    }
+
+    private static String clusterLabel(CommitCluster cluster) {
+        return cluster.commits().isEmpty()
+                ? "(empty)"
+                : cluster.commits().get(cluster.size() - 1).getGithubCommitSha().substring(0, 7)
+                        + " (" + cluster.size() + " commits)";
+    }
+
+    /**
+     * requestAchievement (with its own one-retry-on-schema-drift), then the
+     * insufficient passthrough, grounding, and fabrication checks. priorTitle/
+     * priorResumeBullet, when non-null, make this the "describe only what's
+     * new relative to prior work" regeneration rather than the first attempt
+     * — see AchievementPromptBuilder.
+     */
+    private AchievementOutput requestAndValidate(
+            GithubRepository repository,
+            RepositoryKnowledge knowledge,
+            Evidence evidence,
+            String label,
+            String priorTitle,
+            String priorResumeBullet
+    ) {
+        AchievementOutput output;
+        try {
+            output = requestAchievement(repository, knowledge, evidence, false, priorTitle, priorResumeBullet);
+        } catch (SchemaDriftException first) {
+            log.warn("Schema drift for {} ({}) — retrying once with a shortened prompt",
+                    label, first.getMessage());
+            output = requestAchievement(repository, knowledge, evidence, true, priorTitle, priorResumeBullet);
+        }
+
+        if (output.isInsufficient()) {
+            String reason = output.getReason() == null || output.getReason().isBlank()
+                    ? "The evidence did not support a specific achievement"
+                    : output.getReason();
+            log.info("Model declined to claim an achievement for {}: {}", label, reason);
+            output.setReason(reason);
+            return output;
+        }
+
+        var ungroundedReason = groundingValidator.ungroundedReason(output, evidence);
+        if (ungroundedReason.isPresent()) {
+            log.warn("Achievement response for {} is not grounded in the evidence: {}. "
+                            + "title=\"{}\" resumeBullet=\"{}\"",
+                    label, ungroundedReason.get(), output.getTitle(), output.getResumeBullet());
+            throw new RuntimeException(
+                    "the model's claim is not grounded in the evidence: " + ungroundedReason.get());
+        }
+
+        // Grounding catches "shares no word with the evidence"; this catches
+        // the subtler failure of a claim that DOES share words but still
+        // invents a team's reaction or a technology never used — see
+        // AchievementFabricationValidator.
+        var fabricationReason = fabricationValidator.fabricationReason(output, evidence);
+        if (fabricationReason.isPresent()) {
+            log.warn("Achievement response for {} looks fabricated: {}. title=\"{}\"",
+                    label, fabricationReason.get(), output.getTitle());
+            throw new RuntimeException(
+                    "the model's claim looks fabricated: " + fabricationReason.get());
+        }
 
         return output;
     }
@@ -214,12 +344,14 @@ public class AchievementGeneratorService {
             GithubRepository repository,
             RepositoryKnowledge knowledge,
             Evidence evidence,
-            boolean shortened
+            boolean shortened,
+            String priorTitle,
+            String priorResumeBullet
     ) {
 
         String prompt = shortened
-                ? achievementPromptBuilder.buildShortened(knowledge, evidence)
-                : achievementPromptBuilder.build(knowledge, evidence);
+                ? achievementPromptBuilder.buildShortened(knowledge, evidence, priorTitle, priorResumeBullet)
+                : achievementPromptBuilder.build(knowledge, evidence, priorTitle, priorResumeBullet);
 
         log.debug("Achievement prompt for {}:\n{}", repository.getFullName(), prompt);
 
@@ -243,24 +375,39 @@ public class AchievementGeneratorService {
             return output;
         }
 
-        // Reject anything short of the full shape rather than storing a row with
-        // some fields blank. Checking title alone let a real case through: on a
-        // large repo (176 files / ~10k lines here) the model sometimes abandons
-        // our schema entirely and returns its own unrelated JSON shape instead
-        // — {"title": "GitHub Committer", "description": ..., "points": 50} —
-        // which happens to have a non-blank "title" and nothing else we need, so
-        // it parsed clean, wasn't flagged insufficient, and slipped past the old
-        // check into a persisted achievement with an empty resume bullet and
-        // empty STAR fields. Genuinely thin evidence goes through the
-        // insufficient branch instead; this is the model missing the contract.
-        if (isBlank(output.getTitle()) || isBlank(output.getResumeBullet())
-                || isBlank(output.getStarSituation()) || isBlank(output.getStarTask())
-                || isBlank(output.getStarAction()) || isBlank(output.getStarResult())) {
+        // Every field but title is now genuinely optional — the model is
+        // instructed to omit whatever the evidence doesn't support (see
+        // AchievementPromptBuilder). So the schema-drift check can no longer
+        // require all six fields; it only needs to catch the model
+        // abandoning our schema entirely, which is: no title, or a title
+        // with literally nothing else — every other field blank too. That
+        // second case is exactly the historical bug this replaced: on a
+        // large repo (176 files / ~10k lines here) the model sometimes
+        // returned its own unrelated JSON shape instead —
+        // {"title": "GitHub Committer", "description": ..., "points": 50} —
+        // which has a non-blank title and nothing else we need. A response
+        // that legitimately omits starSituation/starTask because the
+        // evidence doesn't support them still has a resumeBullet or
+        // starAction; only "title and nothing else" indicates drift.
+        if (isBlank(output.getTitle())) {
             log.warn("Achievement response for {} did not match the required schema "
-                            + "(missing title and/or resumeBullet/STAR fields). Raw response:\n{}",
+                            + "(missing title). Raw response:\n{}",
+                    repository.getFullName(), response);
+            throw new SchemaDriftException("the model returned an achievement with no title");
+        }
+
+        boolean hasSubstance = !isBlank(output.getResumeBullet())
+                || !isBlank(output.getStarSituation())
+                || !isBlank(output.getStarTask())
+                || !isBlank(output.getStarAction())
+                || !isBlank(output.getStarResult());
+
+        if (!hasSubstance) {
+            log.warn("Achievement response for {} had a title but no supporting content in any "
+                            + "other field. Raw response:\n{}",
                     repository.getFullName(), response);
             throw new SchemaDriftException(
-                    "the model returned an achievement missing required fields");
+                    "the model returned a title but no supporting content in any other field");
         }
 
         return output;
