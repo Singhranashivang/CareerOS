@@ -137,6 +137,11 @@ class RateLimitFilterTest {
     }
 
     @Test
+    void linkedinPeriodSummaryUsesTheSameTierAsSingleAchievementGeneration() throws Exception {
+        assertPassesThrough("POST", "/api/achievements/linkedin/period", RateLimitTier.LINKEDIN_POST);
+    }
+
+    @Test
     void onboardingStartUsesTheAnalyzeTier() throws Exception {
         assertPassesThrough("POST", "/api/onboarding/start", RateLimitTier.ANALYZE);
     }

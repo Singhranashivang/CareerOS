@@ -14,9 +14,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +27,8 @@ public class LinkedInPostService {
 
     private final AchievementRepository achievementRepository;
     private final LinkedInPromptBuilder linkedInPromptBuilder;
+    private final LinkedInPostShapeValidator shapeValidator;
+    private final LinkedInPostSoloAuthorValidator soloAuthorValidator;
     private final LLMService llmService;
     private final LinkedInPostPersistenceService linkedInPostPersistenceService;
 
@@ -43,7 +47,10 @@ public class LinkedInPostService {
             return toPost(existing.get());
         }
 
-        LinkedInPost post = generateGuarded(achievement);
+        LinkedInPost post = generateGuarded(
+                linkedInPromptBuilder.build(achievement),
+                violations -> linkedInPromptBuilder.buildRetry(achievement, violations),
+                "achievement " + achievement.getId());
 
         LinkedInPostEntity entity = existing.orElseGet(LinkedInPostEntity::new);
         entity.setUser(user);
@@ -59,31 +66,68 @@ public class LinkedInPostService {
     }
 
     /**
-     * Generates a post and checks it against the banned-word list. On a hit,
-     * retries once with the offending words named explicitly. If the retry
-     * still has violations, keeps whichever of the two attempts has fewer
-     * and logs the remainder rather than failing the request.
+     * One post from every non-dismissed achievement in [from, to], across all
+     * repositories — not tied to a single achievement, so unlike generate()
+     * above there's nothing to cache: LinkedInPostEntity's achievement_id is
+     * NOT NULL by design (see V18), and a period summary doesn't have one
+     * achievement to hang a row off. Generated fresh on every call.
      */
-    private LinkedInPost generateGuarded(AchievementEntity achievement) {
+    public LinkedInPeriodPost generatePeriodSummary(User user, LocalDate from, LocalDate to) {
 
-        LinkedInPost first = callModel(linkedInPromptBuilder.build(achievement));
-        List<String> firstViolations = violationsIn(first);
+        if (from.isAfter(to)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "from must not be after to");
+        }
 
-        if (firstViolations.isEmpty()) {
+        List<AchievementEntity> achievements = achievementRepository
+                .findByUserAndDismissedFalseAndGeneratedAtBetweenOrderByGeneratedAtDesc(
+                        user, from.atStartOfDay(), to.atTime(23, 59, 59));
+
+        if (achievements.isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "No achievements found between " + from + " and " + to);
+        }
+
+        LinkedInPost post = generateGuarded(
+                linkedInPromptBuilder.buildPeriod(achievements, from, to),
+                violations -> linkedInPromptBuilder.buildPeriodRetry(achievements, from, to, violations),
+                "period " + from + " to " + to);
+
+        // PERIOD_OUTPUT_JSON no longer asks the model for a headline, so
+        // post.getHeadline() is simply never populated here — this is the
+        // boundary where that gets reflected in the actual response shape.
+        return new LinkedInPeriodPost(post.getPost(), post.getConfidence());
+    }
+
+    /**
+     * Generates a post and checks it against the banned-word list, the
+     * solo-author rule (see LinkedInPostSoloAuthorValidator — added after a
+     * real post invented "a team of five developers" for a solo user), and
+     * the paragraph-break SHAPE rule. On a hit, retries once with the
+     * specific problems named. If the retry still has problems, keeps
+     * whichever of the two attempts has fewer and logs the remainder rather
+     * than failing the request.
+     */
+    private LinkedInPost generateGuarded(
+            String prompt, Function<List<String>, String> retryPrompt, String logLabel) {
+
+        LinkedInPost first = callModel(prompt);
+        List<String> firstProblems = problemsIn(first);
+
+        if (firstProblems.isEmpty()) {
             return first;
         }
 
-        LinkedInPost retry = callModel(linkedInPromptBuilder.buildRetry(achievement, firstViolations));
-        List<String> retryViolations = violationsIn(retry);
+        LinkedInPost retry = callModel(retryPrompt.apply(firstProblems));
+        List<String> retryProblems = problemsIn(retry);
 
-        if (retryViolations.isEmpty()) {
+        if (retryProblems.isEmpty()) {
             return retry;
         }
 
-        boolean retryIsBetter = retryViolations.size() <= firstViolations.size();
+        boolean retryIsBetter = retryProblems.size() <= firstProblems.size();
 
-        log.warn("LinkedIn post for achievement {} still contains banned words after retry: {}",
-                achievement.getId(), retryIsBetter ? retryViolations : firstViolations);
+        log.warn("LinkedIn post for {} still has problems after retry: {}",
+                logLabel, retryIsBetter ? retryProblems : firstProblems);
 
         return retryIsBetter ? retry : first;
     }
@@ -99,10 +143,34 @@ public class LinkedInPostService {
         }
     }
 
-    private static List<String> violationsIn(LinkedInPost post) {
-        List<String> violations = new ArrayList<>(BannedVocabulary.violationsIn(post.getHeadline()));
-        violations.addAll(BannedVocabulary.violationsIn(post.getPost()));
-        return violations;
+    /**
+     * Human-readable problem descriptions — banned words as one line, team/
+     * solo-author violations as their own line, each shape violation as its
+     * own. post.getHeadline() is null for a period post (see
+     * generatePeriodSummary), and every check below already treats a
+     * null/blank string as "no violations", so this needs no branching per
+     * response shape.
+     */
+    private List<String> problemsIn(LinkedInPost post) {
+
+        List<String> problems = new ArrayList<>();
+
+        List<String> bannedWords = new ArrayList<>(BannedVocabulary.violationsIn(post.getHeadline()));
+        bannedWords.addAll(BannedVocabulary.violationsIn(post.getPost()));
+        if (!bannedWords.isEmpty()) {
+            problems.add("used these banned words/phrases: " + String.join(", ", bannedWords));
+        }
+
+        List<String> teamReferences = new ArrayList<>(soloAuthorValidator.violationsIn(post.getHeadline()));
+        teamReferences.addAll(soloAuthorValidator.violationsIn(post.getPost()));
+        if (!teamReferences.isEmpty()) {
+            problems.add("invented a team or used first-person plural (this is one person working "
+                    + "alone): " + String.join(", ", teamReferences));
+        }
+
+        problems.addAll(shapeValidator.violationsIn(post.getPost()));
+
+        return problems;
     }
 
     private static LinkedInPost toPost(LinkedInPostEntity entity) {

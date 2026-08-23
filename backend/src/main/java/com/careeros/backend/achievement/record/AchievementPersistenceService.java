@@ -5,8 +5,11 @@ import com.careeros.backend.user.User;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -73,12 +76,44 @@ public class AchievementPersistenceService {
     }
 
     @Transactional(readOnly = true)
-    public List<AchievementEntity> findByUserNewestFirst(User user) {
-        return achievementRepository.findByUserOrderByGeneratedAtDesc(user);
-    }
-
-    @Transactional(readOnly = true)
     public long countForUser(User user) {
         return achievementRepository.countByUser(user);
+    }
+
+    /**
+     * Full replace of the six editable fields, not a partial patch — see
+     * AchievementEditRequest. Mutates the managed entity and relies on
+     * Hibernate's dirty checking to persist it at commit, same as
+     * OnboardingRunService's per-field updates.
+     */
+    public AchievementEntity edit(User user, Long id, AchievementEditRequest request) {
+
+        if (request.title() == null || request.title().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "title must not be blank");
+        }
+
+        AchievementEntity entity = requireOwned(user, id);
+
+        entity.setTitle(request.title());
+        entity.setResumeBullet(request.resumeBullet());
+        entity.setStarSituation(request.starSituation());
+        entity.setStarTask(request.starTask());
+        entity.setStarAction(request.starAction());
+        entity.setStarResult(request.starResult());
+        entity.setUserEdited(true);
+
+        return entity;
+    }
+
+    /** Excluded from lists and never regenerated from here on — see AchievementEntity.dismissed. */
+    public AchievementEntity dismiss(User user, Long id) {
+        AchievementEntity entity = requireOwned(user, id);
+        entity.setDismissed(true);
+        return entity;
+    }
+
+    private AchievementEntity requireOwned(User user, Long id) {
+        return achievementRepository.findByIdAndUser(id, user)
+                .orElseThrow(() -> new AccessDeniedException("Achievement not found"));
     }
 }

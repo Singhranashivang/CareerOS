@@ -78,4 +78,25 @@ public class AchievementEntity {
     private double confidence;
 
     private LocalDateTime generatedAt;
+
+    /**
+     * Set by PATCH /api/achievements/{id}. The generator never updates an
+     * existing row (it only inserts, blocked from a second insert on the
+     * same cluster by the citedCommitShasJson dedup), so this can't
+     * currently be silently overwritten — it exists as an explicit,
+     * checkable signal for the UI and for any future code path that might
+     * otherwise consider updating a row in place.
+     */
+    @Column(name = "user_edited", nullable = false)
+    @Builder.Default
+    private boolean userEdited = false;
+
+    /**
+     * Set by POST /api/achievements/{id}/dismiss. Excluded from the default
+     * list and digest; AchievementGeneratorService skips any cluster whose
+     * commit set matches a dismissed achievement's citedCommitShasJson.
+     */
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean dismissed = false;
 }

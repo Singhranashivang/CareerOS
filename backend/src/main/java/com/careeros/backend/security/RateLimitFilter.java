@@ -55,6 +55,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             rule(HttpMethod.GET, "/knowledge/generate", RateLimitTier.ANALYZE),
             rule(HttpMethod.GET, "/achievement/star", RateLimitTier.ANALYZE),
             rule(HttpMethod.POST, "/achievement/linkedin/*", RateLimitTier.LINKEDIN_POST),
+            rule(HttpMethod.POST, "/api/achievements/linkedin/period", RateLimitTier.LINKEDIN_POST),
             rule(HttpMethod.POST, "/api/onboarding/start", RateLimitTier.ANALYZE)
     );
 

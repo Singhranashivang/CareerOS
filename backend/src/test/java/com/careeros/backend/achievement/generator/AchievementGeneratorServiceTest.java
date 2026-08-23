@@ -136,7 +136,7 @@ class AchievementGeneratorServiceTest {
         verify(llmService).generate("shortened-prompt");
         verify(analysisRecorder).record(eq(4L), eq(AnalysisOutcome.ERROR),
                 contains("no supporting content"));
-        verifyNoInteractions(achievementRepository);
+        verifyNoInteractions(achievementPersistenceService);
     }
 
     @Test
@@ -187,7 +187,7 @@ class AchievementGeneratorServiceTest {
                 .hasMessageContaining("not grounded");
 
         verify(analysisRecorder).record(eq(4L), eq(AnalysisOutcome.ERROR), contains("not grounded"));
-        verifyNoInteractions(achievementRepository);
+        verifyNoInteractions(achievementPersistenceService);
     }
 
     @Test
@@ -301,6 +301,19 @@ class AchievementGeneratorServiceTest {
         assertThat(output.getTitle()).isEqualTo("Added Bounded Recursion Depth Limit To Prevent Stack Overflow");
         verify(llmService, times(2)).generate("prompt");
         verify(achievementPersistenceService).saveEntity(any());
+    }
+
+    @Test
+    void aClusterMatchingADismissedAchievementIsSkippedWithoutCallingTheModel() {
+        when(commitClusterer.cluster(eq(REPO), any(), any())).thenReturn(List.of(CLUSTER));
+        when(achievementRepository.existsByUserAndRepositoryNameAndCitedCommitShasJsonAndDismissedTrue(
+                any(), any(), any())).thenReturn(true);
+
+        AchievementOutput output = service.generate(REPO, "token").get(0);
+
+        assertThat(output.isInsufficient()).isTrue();
+        assertThat(output.getReason()).containsIgnoringCase("dismissed");
+        verifyNoInteractions(llmService, evidenceBuilder, achievementPersistenceService);
     }
 
     @Test

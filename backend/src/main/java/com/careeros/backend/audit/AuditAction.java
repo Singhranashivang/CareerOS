@@ -9,6 +9,8 @@ public enum AuditAction {
     ACHIEVEMENT_ANALYZE,
     /** No endpoint calls achievementRepository.delete() yet — wire this in when one exists. */
     ACHIEVEMENT_DELETE,
+    ACHIEVEMENT_EDIT,
+    ACHIEVEMENT_DISMISS,
     SCHEDULED_POST_CREATE,
     SCHEDULED_POST_UPDATE,
     SCHEDULED_POST_CANCEL,

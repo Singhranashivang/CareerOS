@@ -17,7 +17,8 @@ public interface AchievementRepository
 
     Optional<AchievementEntity> findByIdAndUser(Long id, User user);
 
-    List<AchievementEntity> findByUserOrderByGeneratedAtDesc(User user);
+    /** Excludes dismissed achievements — the default list, per GET /api/achievements. */
+    List<AchievementEntity> findByUserAndDismissedFalseOrderByGeneratedAtDesc(User user);
 
     List<AchievementEntity> findByRepositoryIdOrderByGeneratedAtDesc(Long repositoryId);
 
@@ -30,9 +31,17 @@ public interface AchievementRepository
     boolean existsByUserAndRepositoryNameAndCitedCommitShasJson(
             User user, String repositoryName, String citedCommitShasJson);
 
-    /** Backs GET /api/digest/latest — "this week's" achievements, since the latest digest run. */
-    List<AchievementEntity> findByUserAndGeneratedAtAfterOrderByGeneratedAtDesc(
+    /** The generator checks this before doing any evidence/LLM work, so a dismissed cluster is never regenerated. */
+    boolean existsByUserAndRepositoryNameAndCitedCommitShasJsonAndDismissedTrue(
+            User user, String repositoryName, String citedCommitShasJson);
+
+    /** Backs GET /api/digest/latest — "this week's" achievements, since the latest digest run. Excludes dismissed. */
+    List<AchievementEntity> findByUserAndDismissedFalseAndGeneratedAtAfterOrderByGeneratedAtDesc(
             User user, LocalDateTime after);
+
+    /** Backs POST /api/achievements/linkedin/period — every non-dismissed achievement in [from, to]. */
+    List<AchievementEntity> findByUserAndDismissedFalseAndGeneratedAtBetweenOrderByGeneratedAtDesc(
+            User user, LocalDateTime from, LocalDateTime to);
 
     @Query("""
            select a.repository.id as repositoryId, count(a) as total

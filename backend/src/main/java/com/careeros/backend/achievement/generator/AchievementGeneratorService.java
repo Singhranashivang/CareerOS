@@ -153,6 +153,17 @@ public class AchievementGeneratorService {
             String accessToken
     ) {
         String label = repository.getFullName() + " cluster " + clusterLabel(cluster);
+        String citedShasJson = citedCommitShasJson(cluster);
+
+        // Checked before any evidence-building or LLM work: a dismissed
+        // achievement must never be regenerated, not just never re-saved.
+        if (achievementRepository.existsByUserAndRepositoryNameAndCitedCommitShasJsonAndDismissedTrue(
+                repository.getUser(), repository.getName(), citedShasJson)) {
+
+            log.info("Skipping {} — commit set matches a dismissed achievement", label);
+            return AchievementOutput.builder()
+                    .insufficient(true).reason("Matches a dismissed achievement").build();
+        }
 
         Evidence evidence = evidenceBuilder.buildForCluster(repository, cluster, accessToken);
 
@@ -178,8 +189,6 @@ public class AchievementGeneratorService {
             return AchievementOutput.builder()
                     .insufficient(true).reason(reason).confidence(confidence).build();
         }
-
-        String citedShasJson = citedCommitShasJson(cluster);
 
         // Dedup on the cluster's commit set rather than title: regenerating a
         // repo re-clusters the same commits into the same groups, and the
@@ -248,6 +257,7 @@ public class AchievementGeneratorService {
                 .starAction(output.getStarAction())
                 .starResult(output.getStarResult())
                 .citedCommitShasJson(citedShasJson)
+                .technologiesJson(technologiesJson(evidence))
                 .confidence(confidence)
                 .generatedAt(LocalDateTime.now())
                 .build();
@@ -255,6 +265,21 @@ public class AchievementGeneratorService {
         achievementPersistenceService.saveEntity(entity);
 
         return output;
+    }
+
+    /**
+     * Was never populated for GitHub-sourced achievements before this —
+     * evidence.getTechnologies() was already computed during evidence
+     * building and simply wasn't carried onto the entity, so "distinct
+     * technologies" had nothing to read across a repository's achievements.
+     */
+    private String technologiesJson(Evidence evidence) {
+        try {
+            return objectMapper.writeValueAsString(evidence.getTechnologies());
+        } catch (Exception e) {
+            log.warn("Failed to serialize technologies for evidence, storing none", e);
+            return null;
+        }
     }
 
     /** Sorted so the same commit set always serializes to the same string — the dedup key. */
