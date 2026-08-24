@@ -104,7 +104,21 @@ class LinkedInPromptBuilderTest {
         String prompt = builder.buildPeriod(List.of(achievement), LocalDate.of(2026, 7, 1), LocalDate.of(2026, 8, 1));
 
         assertThat(prompt).doesNotContain("headline").doesNotContain("\"headline\"");
-        assertThat(prompt).contains("\"post\":\"\"").contains("\"confidence\":0.95");
+        assertThat(prompt).contains("\"paragraphs\":[").contains("\"confidence\":0.95");
+    }
+
+    @Test
+    void thePeriodPromptAsksForParagraphsAsAJsonArrayNotOneStringWithBlankLines() {
+        // A model that must emit N array elements is structurally more likely
+        // to produce N paragraphs than one asked to insert "\n\n" into prose —
+        // that instruction alone left 7/10 first attempts as one unbroken block.
+        AchievementEntity achievement = AchievementEntity.builder().title("x").build();
+
+        String prompt = builder.buildPeriod(List.of(achievement), LocalDate.of(2026, 7, 1), LocalDate.of(2026, 8, 1));
+
+        assertThat(prompt).contains("\"paragraphs\":[\"\", \"\", \"\"]");
+        assertThat(prompt).contains("exactly one paragraph");
+        assertThat(prompt).doesNotContain("\"post\":");
     }
 
     @Test
@@ -130,16 +144,43 @@ class LinkedInPromptBuilderTest {
     }
 
     @Test
-    void bothPromptsInstructBreakingExistingContentRatherThanAddingMoreToHitParagraphCount() {
+    void thePeriodPromptInstructsBreakingExistingContentRatherThanAddingMoreToHitParagraphCount() {
+        AchievementEntity achievement = AchievementEntity.builder().title("x").build();
+
+        String period = builder.buildPeriod(List.of(achievement), LocalDate.of(2026, 7, 1), LocalDate.of(2026, 8, 1));
+
+        assertThat(period).contains("BREAKING your material");
+        assertThat(period).contains("just to fill");
+        assertThat(period).contains("more elements");
+    }
+
+    @Test
+    void theSingleAchievementPromptDoesNotRequireMultipleParagraphsUnlikeThePeriodPrompt() {
+        // A single achievement rarely has 3+ paragraphs of honest material — a
+        // reliability check found the model either ignoring that requirement
+        // or padding with invented detail to satisfy it. Dropped for this
+        // prompt only; the period prompt below still requires it.
         AchievementEntity achievement = AchievementEntity.builder().title("x").build();
 
         String single = builder.build(achievement);
         String period = builder.buildPeriod(List.of(achievement), LocalDate.of(2026, 7, 1), LocalDate.of(2026, 8, 1));
 
-        for (String prompt : List.of(single, period)) {
-            assertThat(prompt).contains("BREAKING your material");
-            assertThat(prompt).contains("just to fill out more paragraphs");
-        }
+        assertThat(single).doesNotContain("3 to 4 short paragraphs").doesNotContain("BREAKING your material");
+        assertThat(single).contains("not three paragraphs");
+        assertThat(period).contains("3 to 4 short paragraphs");
+    }
+
+    @Test
+    void thePeriodPromptCapsAtFourParagraphsNotFive() {
+        // Two real posts used all 5 of the old slots and read as a changelog
+        // that listed every piece of work instead of picking two or three.
+        AchievementEntity achievement = AchievementEntity.builder().title("x").build();
+
+        String period = builder.buildPeriod(List.of(achievement), LocalDate.of(2026, 7, 1), LocalDate.of(2026, 8, 1));
+
+        assertThat(period).contains("never 5");
+        assertThat(period).contains("3 to 4 elements");
+        assertThat(period).doesNotContain("3 to 5 elements");
     }
 
     @Test

@@ -65,4 +65,25 @@ class LinkedInPostShapeValidatorTest {
         assertThat(validator.violationsIn("")).isNotEmpty();
         assertThat(validator.violationsIn(null)).isNotEmpty();
     }
+
+    @Test
+    void fourParagraphsIsTheMaximumAllowed() {
+        String post = words(30) + "\n\n" + words(30) + "\n\n" + words(30) + "\n\n" + words(30);
+
+        assertThat(post.split("\\r?\\n\\s*\\r?\\n")).hasSize(4); // sanity: exactly 3 breaks
+
+        assertThat(validator.violationsIn(post)).isEmpty();
+    }
+
+    @Test
+    void fiveParagraphsExceedsTheMaximumAndIsRejected() {
+        // The real bug this was added for: two real posts used all 5 slots
+        // and read as a changelog that listed every piece of work instead of
+        // picking two or three and going deep.
+        String post = words(30) + "\n\n" + words(30) + "\n\n" + words(30) + "\n\n" + words(30) + "\n\n" + words(30);
+
+        var violations = validator.violationsIn(post);
+
+        assertThat(violations).anyMatch(v -> v.contains("paragraph breaks") && v.contains("pick two or three"));
+    }
 }

@@ -43,6 +43,15 @@ public interface AchievementRepository
     List<AchievementEntity> findByUserAndDismissedFalseAndGeneratedAtBetweenOrderByGeneratedAtDesc(
             User user, LocalDateTime from, LocalDateTime to);
 
+    /**
+     * Backs POST /api/achievements/linkedin/combined — an explicit id
+     * selection instead of a date range. Scoped to user + dismissed=false in
+     * the query itself so a ownership/dismissed check is just "did every id
+     * come back" rather than a separate lookup per id.
+     */
+    List<AchievementEntity> findByIdInAndUserAndDismissedFalseOrderByGeneratedAtDesc(
+            List<Long> ids, User user);
+
     @Query("""
            select a.repository.id as repositoryId, count(a) as total
            from AchievementEntity a

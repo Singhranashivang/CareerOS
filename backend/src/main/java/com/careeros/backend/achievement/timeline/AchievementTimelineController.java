@@ -74,4 +74,15 @@ public class AchievementTimelineController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return linkedInPostService.generatePeriodSummary(currentUserService.require(), from, to);
     }
+
+    /**
+     * Same as /linkedin/period above but the achievements are named
+     * explicitly instead of picked by date range — see
+     * LinkedInPostService.generateCombined. Same rate-limit tier: one real
+     * LLM call either way.
+     */
+    @PostMapping("/linkedin/combined")
+    public LinkedInPeriodPost linkedInCombined(@RequestBody List<Long> achievementIds) {
+        return linkedInPostService.generateCombined(currentUserService.require(), achievementIds);
+    }
 }

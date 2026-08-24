@@ -64,14 +64,32 @@ public class LinkedInPromptBuilder {
             ====================
             """;
 
-    /** No "headline" key at all — a period post's headline was always a redundant copy of the post's first line. */
+    /**
+     * No "headline" key at all — a period post's headline was always a
+     * redundant copy of the post's first line. And "paragraphs" is an array,
+     * not one string with "\n\n" inside it — a model asked for N array
+     * elements is structurally more likely to produce N paragraphs than one
+     * asked to insert blank lines into prose; the latter left 7/10 first
+     * attempts as a single unbroken block. See LinkedInPeriodModelResponse
+     * for the join-server-side boundary. Capped at 4, not 5 — two real posts
+     * used all 5 slots and read as a changelog that listed every piece of
+     * work instead of picking two or three and going deep (see SUBSTANCE
+     * below); LinkedInPostShapeValidator rejects and retries on more than 4.
+     */
     private static final String PERIOD_OUTPUT_JSON = """
             OUTPUT
+
+            Each element of "paragraphs" is exactly one paragraph — plain text, no
+            "\\n\\n" or blank lines inside an element. Do not put your whole post in
+            one element; that defeats the point of the array. 3 to 4 elements,
+            matching the SHAPE rules above — no more than 4, even if you have more
+            than 4 pieces of work to choose from. Pick the two or three worth going
+            deep on instead of listing everything.
 
             Return ONLY JSON, no other text:
 
             {
-              "post":"",
+              "paragraphs":["", "", ""],
               "confidence":0.95
             }
 
@@ -83,19 +101,20 @@ public class LinkedInPromptBuilder {
             piece of work you just finished.
 
             The post must read like a developer talking, not a resume bullet and not
-            a press release. A single dense paragraph is a failure regardless of how
-            accurate it is.
+            a press release.
 
             SHAPE
 
-            - 3 to 5 short paragraphs, separated by a blank line each. Never one block of text.
-              Get there by BREAKING your material at its natural boundaries — the
-              before-state, the change, the result, the closing line each make a
-              natural paragraph of their own. Never by adding sentences, detail, or
-              claims that aren't in the evidence just to fill out more paragraphs.
+            - One achievement is one to three honest sentences, not three paragraphs —
+              do not add a paragraph break, a sentence, or a claim that isn't in the
+              evidence just to look more substantial. A single short paragraph is
+              correct if that's all the evidence supports. Only break into a second
+              paragraph if there's a genuinely separate before-state and result to
+              state, or a closing line that doesn't fit the first paragraph.
             - Open with the single most specific or surprising fact from the evidence.
               Never open with a summary of "this week" or the category of work.
-            - Close with one line worth remembering: a lesson, a trade-off, or a question.
+            - Close with one line worth remembering — a lesson, a trade-off, or a
+              question — only if the evidence actually supports one.
             - Under 250 words. There is no minimum — a shorter, honest post beats a
               longer one padded with a claim the evidence doesn't support.
 
@@ -125,34 +144,22 @@ public class LinkedInPromptBuilder {
 
             ✓ Bug fix:
             Two controllers were still pulling the user id straight off the session
-            instead of going through CurrentUserService. Easy to miss, easy to exploit —
-            a forged session could touch data that wasn't scoped to the right account.
-
-            Went through every controller by hand and rerouted them through the shared
-            service. No new dependency, just deleting the shortcuts.
-
-            The parts of a codebase that look "basically fine" are usually the ones
-            nobody re-checked in a year.
+            instead of going through CurrentUserService — easy to miss, easy to exploit,
+            since a forged session could touch data that wasn't scoped to the right
+            account. Went through every controller by hand and rerouted them through
+            the shared service; no new dependency, just deleting the shortcuts.
 
             ✓ Refactor:
-            LinkedInPostService was caching one post per user, forever. The first
+            LinkedInPostService was caching one post per user, forever — the first
             achievement generated set the copy for every achievement after it, and
-            nobody noticed because the text still looked plausible.
-
-            Moved the cache key from user to achievement id and added a unique index so
-            regeneration overwrites instead of piling up rows.
-
-            The bug wasn't in the LLM call. It was in what we picked as a cache key.
+            nobody noticed because the text still looked plausible. Moved the cache key
+            from user to achievement id and added a unique index so regeneration
+            overwrites instead of piling up rows.
 
             ✓ New feature:
             Added a claim loop to the scheduler using SELECT ... FOR UPDATE SKIP LOCKED
-            so two workers can't grab the same scheduled post.
-
-            Tested it by firing 20 threads at the same table and checking nothing got
-            claimed twice.
-
-            Postgres already had the tool for this. I just had to stop reaching for an
-            app-level lock first.
+            so two workers can't grab the same scheduled post. Tested it by firing 20
+            threads at the same table and checking nothing got claimed twice.
 
             """
             + OUTPUT_JSON;
@@ -167,11 +174,15 @@ public class LinkedInPromptBuilder {
 
             SHAPE
 
-            - 3 to 5 short paragraphs, separated by a blank line each. Never one block of text.
-              Get there by BREAKING your material at its natural boundaries — the
+            - 3 to 4 short paragraphs, never 5 — you will return these as separate
+              array elements (see OUTPUT below), not as one string with blank lines
+              inside it, so each paragraph has to actually stand on its own. Get
+              there by BREAKING your material at its natural boundaries — the
               opening fact, each piece of work, the closing line each make a natural
-              paragraph of their own. Never by adding sentences, detail, or claims
-              that aren't in the achievements below just to fill out more paragraphs.
+              paragraph of their own, and its own array element. Never by adding
+              sentences, detail, or claims that aren't in the achievements below
+              just to fill out more elements, and never by adding a 5th element to
+              cover one more piece of work — pick two or three instead (see below).
             - Open with the single most specific or surprising thing from the period —
               not a summary of "this period" or a count of how much got done.
             - The middle names two or three concrete pieces of work from the
