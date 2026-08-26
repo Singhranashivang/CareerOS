@@ -117,8 +117,8 @@ class AchievementGeneratorServiceTest {
         when(evidenceBuilder.buildForCluster(eq(REPO), eq(CLUSTER), any())).thenReturn(evidence);
         when(evidenceSufficiency.shortfall(any())).thenReturn(Optional.empty());
         when(repositoryKnowledgeService.generate(any(), any())).thenReturn(mock(RepositoryKnowledge.class));
-        when(achievementPromptBuilder.build(any(), any(), any(), any())).thenReturn("prompt");
-        when(achievementPromptBuilder.buildShortened(any(), any(), any(), any())).thenReturn("shortened-prompt");
+        when(achievementPromptBuilder.build(any(), any(), any(), any(), any())).thenReturn("prompt");
+        when(achievementPromptBuilder.buildShortened(any(), any(), any(), any(), any())).thenReturn("shortened-prompt");
         when(llmService.generate("prompt")).thenReturn(llmResponse);
         when(llmService.generate("shortened-prompt")).thenReturn(llmResponse);
     }
@@ -151,8 +151,8 @@ class AchievementGeneratorServiceTest {
         when(evidenceBuilder.buildForCluster(eq(REPO), eq(CLUSTER), any())).thenReturn(evidence);
         when(evidenceSufficiency.shortfall(any())).thenReturn(Optional.empty());
         when(repositoryKnowledgeService.generate(any(), any())).thenReturn(mock(RepositoryKnowledge.class));
-        when(achievementPromptBuilder.build(any(), any(), any(), any())).thenReturn("prompt");
-        when(achievementPromptBuilder.buildShortened(any(), any(), any(), any())).thenReturn("shortened-prompt");
+        when(achievementPromptBuilder.build(any(), any(), any(), any(), any())).thenReturn("prompt");
+        when(achievementPromptBuilder.buildShortened(any(), any(), any(), any(), any())).thenReturn("shortened-prompt");
         // First attempt drifts (no title); the shortened retry gets a real one.
         when(llmService.generate("prompt")).thenReturn("""
                 {"achievement":{"title":"Achievement Title"}}
@@ -250,7 +250,7 @@ class AchievementGeneratorServiceTest {
                  "confidence":0.95}
                 """);
         when(achievementPromptBuilder.buildRetryForVagueTitle(
-                any(), any(), any(), any(), eq("GitHub Committer"), any()))
+                any(), any(), any(), any(), any(), eq("GitHub Committer"), any()))
                 .thenReturn("vague-title-retry-prompt");
         when(llmService.generate("vague-title-retry-prompt")).thenReturn("""
                 {"title":"Spiral Search Implementation",
@@ -281,7 +281,7 @@ class AchievementGeneratorServiceTest {
                  "confidence":0.95}
                 """);
         when(achievementPromptBuilder.buildRetryForVagueTitle(
-                any(), any(), any(), any(), eq("GitHub Committer"), any()))
+                any(), any(), any(), any(), any(), eq("GitHub Committer"), any()))
                 .thenReturn("vague-title-retry-prompt");
         when(llmService.generate("vague-title-retry-prompt")).thenReturn("""
                 {"title":"Code Contributor",
@@ -313,7 +313,7 @@ class AchievementGeneratorServiceTest {
         when(evidenceBuilder.buildForCluster(eq(REPO), eq(clusterWithFiles), any())).thenReturn(groundedEvidence());
         when(evidenceSufficiency.shortfall(any())).thenReturn(Optional.empty());
         when(repositoryKnowledgeService.generate(any(), any())).thenReturn(mock(RepositoryKnowledge.class));
-        when(achievementPromptBuilder.build(any(), any(), any(), any())).thenReturn("prompt");
+        when(achievementPromptBuilder.build(any(), any(), any(), any(), any())).thenReturn("prompt");
         when(llmService.generate("prompt")).thenReturn("""
                 {"title":"Spiral Search Implementation",
                  "resumeBullet":"Implemented a spiral search algorithm for 2D arrays",

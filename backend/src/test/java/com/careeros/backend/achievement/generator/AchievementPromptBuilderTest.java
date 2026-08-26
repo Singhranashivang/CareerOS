@@ -3,6 +3,7 @@ package com.careeros.backend.achievement.generator;
 import com.careeros.backend.achievement.evidence.Evidence;
 import com.careeros.backend.achievement.extractor.Feature;
 import com.careeros.backend.achievement.knowledge.RepositoryKnowledge;
+import com.careeros.backend.user.UserGoal;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -97,5 +98,49 @@ class AchievementPromptBuilderTest {
 
         assertThat(prompt).contains("Foo.java").contains("Bar.java");
         assertThat(prompt).doesNotContain("more file").doesNotContain("more commit");
+    }
+
+    @Test
+    void noGoalAddsNoGoalInstruction() {
+        String prompt = builder.build(emptyKnowledge(), Evidence.builder().build(), null, null, null);
+
+        assertThat(prompt).doesNotContain("GOAL:");
+    }
+
+    @Test
+    void jobHuntingAsksForTechnologyBreadthAndResumeShapedBullets() {
+        String prompt = builder.build(emptyKnowledge(), Evidence.builder().build(), null, null, UserGoal.JOB_HUNTING);
+
+        assertThat(prompt).contains("GOAL: JOB HUNTING");
+        assertThat(prompt).contains("breadth");
+        assertThat(prompt).contains("resume line");
+    }
+
+    @Test
+    void audienceBuildingAsksForNarrativeAndSurprisingDetail() {
+        String prompt = builder.build(
+                emptyKnowledge(), Evidence.builder().build(), null, null, UserGoal.AUDIENCE_BUILDING);
+
+        assertThat(prompt).contains("GOAL: AUDIENCE BUILDING");
+        assertThat(prompt).contains("narrative");
+        assertThat(prompt).contains("surprising");
+    }
+
+    @Test
+    void performanceReviewAsksForScopeAndImpact() {
+        String prompt = builder.build(
+                emptyKnowledge(), Evidence.builder().build(), null, null, UserGoal.PERFORMANCE_REVIEW);
+
+        assertThat(prompt).contains("GOAL: PERFORMANCE REVIEW");
+        assertThat(prompt).contains("scope");
+        assertThat(prompt).contains("impact");
+    }
+
+    @Test
+    void goalInstructionSurvivesTheShortenedRetryPromptToo() {
+        String shortened = builder.buildShortened(
+                emptyKnowledge(), Evidence.builder().build(), null, null, UserGoal.JOB_HUNTING);
+
+        assertThat(shortened).contains("GOAL: JOB HUNTING");
     }
 }

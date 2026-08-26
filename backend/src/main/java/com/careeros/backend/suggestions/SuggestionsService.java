@@ -10,6 +10,7 @@ import com.careeros.backend.schedule.PostStatus;
 import com.careeros.backend.schedule.ScheduledPost;
 import com.careeros.backend.schedule.ScheduledPostRepository;
 import com.careeros.backend.user.User;
+import com.careeros.backend.user.UserGoal;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -45,13 +46,10 @@ public class SuggestionsService {
         List<AchievementEntity> nonDismissed =
                 achievementRepository.findByUserAndDismissedFalseOrderByGeneratedAtDesc(user);
 
-        // NoOpPublisher (still standing in for the real LinkedIn publish call)
-        // marks every post POSTED and stamps postedAt regardless of whether
-        // anything actually went anywhere — it just logs the body and returns
-        // "noop-<uuid>" as the external id. Nothing here should treat that as
-        // "the user posted"; filtered out before anything else reads `posted`.
+        // See ScheduledPost.wasActuallyPublished — filtered out before
+        // anything else here reads `posted`.
         List<ScheduledPost> posted = scheduledPostRepository.findByUserAndStatus(user, PostStatus.POSTED).stream()
-                .filter(SuggestionsService::wasActuallyPublished)
+                .filter(ScheduledPost::wasActuallyPublished)
                 .toList();
         List<AchievementEntity> postedAchievements = posted.stream()
                 .map(ScheduledPost::getAchievement)
@@ -68,7 +66,7 @@ public class SuggestionsService {
 
         List<SuggestedAchievementResponse> ranked = nonDismissed.stream()
                 .filter(a -> !postedAchievementIds.contains(a.getId()))
-                .map(a -> toRanked(a, repositoriesWithPostedWork.contains(a.getRepositoryName())))
+                .map(a -> toRanked(a, repositoriesWithPostedWork.contains(a.getRepositoryName()), user.getGoal()))
                 .sorted(Comparator.comparingDouble(SuggestedAchievementResponse::score).reversed())
                 .toList();
 
@@ -93,8 +91,9 @@ public class SuggestionsService {
                 repositoriesWithNoAchievements(user));
     }
 
-    private SuggestedAchievementResponse toRanked(AchievementEntity achievement, boolean repositoryHasPostedWork) {
-        var scored = suggestionScorer.score(achievement, repositoryHasPostedWork);
+    private SuggestedAchievementResponse toRanked(
+            AchievementEntity achievement, boolean repositoryHasPostedWork, UserGoal goal) {
+        var scored = suggestionScorer.score(achievement, repositoryHasPostedWork, goal);
         return new SuggestedAchievementResponse(
                 achievement.getId(),
                 achievement.getTitle(),
@@ -129,8 +128,11 @@ public class SuggestionsService {
      * every time is just noise. Only surface a repo if there's owner-authored
      * work newer than its last analysis — i.e. there's something the
      * generator hasn't looked at yet, not just a repo it already declined.
+     * Public so WeeklyEmailService can reuse the exact same "needs analysis"
+     * definition instead of re-deriving it.
      */
-    private List<String> repositoriesWithNoAchievements(User user) {
+    @Transactional(readOnly = true)
+    public List<String> repositoriesWithNoAchievements(User user) {
 
         Map<Long, Long> achievementCountByRepository = achievementRepository.countPerRepository(user).stream()
                 .collect(Collectors.toMap(RepositoryCountProjection::getRepositoryId, RepositoryCountProjection::getTotal));
@@ -161,8 +163,4 @@ public class SuggestionsService {
                 repository, repository.getLastAnalyzedAt().toLocalDateTime());
     }
 
-    /** NoOpPublisher (see suggestionsFor's comment) always prefixes its fake external id this way. */
-    private static boolean wasActuallyPublished(ScheduledPost post) {
-        return post.getExternalPostId() == null || !post.getExternalPostId().startsWith("noop-");
-    }
 }

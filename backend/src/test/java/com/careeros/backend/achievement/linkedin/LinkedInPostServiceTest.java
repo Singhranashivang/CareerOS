@@ -28,13 +28,18 @@ class LinkedInPostServiceTest {
     private final LinkedInPostPersistenceService linkedInPostPersistenceService =
             mock(LinkedInPostPersistenceService.class);
 
+    // Defaults to an empty list (Mockito), i.e. a user below the threshold — the
+    // prompts these tests assert on are the no-samples ones. PreferredVoiceExamplesTest
+    // covers the threshold itself.
+    private final PreferredVoiceExamples preferredVoiceExamples = mock(PreferredVoiceExamples.class);
+
     // Mocked (defaults to "no violations", per Mockito's empty-list default) rather
     // than the real validators, so tests unrelated to shape/solo-author don't need
     // a placeholder post carefully worded to avoid tripping them. The dedicated
     // tests below stub these explicitly instead.
     private final LinkedInPostService service = new LinkedInPostService(
             achievementRepository, linkedInPromptBuilder, shapeValidator, soloAuthorValidator,
-            llmService, linkedInPostPersistenceService,
+            llmService, linkedInPostPersistenceService, preferredVoiceExamples,
             new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false));
 
     private static final User USER = User.builder().id(1L).githubId(1L).username("u").build();
@@ -64,7 +69,7 @@ class LinkedInPostServiceTest {
         when(achievementRepository.findByUserAndDismissedFalseAndGeneratedAtBetweenOrderByGeneratedAtDesc(
                 eq(USER), eq(FROM.atStartOfDay()), eq(TO.atTime(23, 59, 59))))
                 .thenReturn(List.of(a));
-        when(linkedInPromptBuilder.buildPeriod(List.of(a), FROM, TO)).thenReturn("prompt");
+        when(linkedInPromptBuilder.buildPeriod(eq(List.of(a)), eq(FROM), eq(TO), any())).thenReturn("prompt");
         when(llmService.generate("prompt")).thenReturn("""
                 {"paragraphs":["p"],"confidence":0.9}
                 """);
@@ -84,7 +89,7 @@ class LinkedInPostServiceTest {
         AchievementEntity a = AchievementEntity.builder().title("A").resumeBullet("Did A").build();
         when(achievementRepository.findByUserAndDismissedFalseAndGeneratedAtBetweenOrderByGeneratedAtDesc(
                 eq(USER), any(), any())).thenReturn(List.of(a));
-        when(linkedInPromptBuilder.buildPeriod(List.of(a), FROM, TO)).thenReturn("prompt");
+        when(linkedInPromptBuilder.buildPeriod(eq(List.of(a)), eq(FROM), eq(TO), any())).thenReturn("prompt");
         when(llmService.generate("prompt")).thenReturn("""
                 {"paragraphs":["First.","Second.","Third."],"confidence":0.9}
                 """);
@@ -102,7 +107,7 @@ class LinkedInPostServiceTest {
         AchievementEntity a = AchievementEntity.builder().title("A").resumeBullet("Did A").build();
         when(achievementRepository.findByUserAndDismissedFalseAndGeneratedAtBetweenOrderByGeneratedAtDesc(
                 eq(USER), any(), any())).thenReturn(List.of(a));
-        when(linkedInPromptBuilder.buildPeriod(List.of(a), FROM, TO)).thenReturn("prompt");
+        when(linkedInPromptBuilder.buildPeriod(eq(List.of(a)), eq(FROM), eq(TO), any())).thenReturn("prompt");
         when(llmService.generate("prompt")).thenReturn("""
                 {"paragraphs":["I leveraged the plan and enhanced results."],"confidence":0.9}
                 """);
@@ -118,8 +123,8 @@ class LinkedInPostServiceTest {
         AchievementEntity a = AchievementEntity.builder().title("A").resumeBullet("Did A").build();
         when(achievementRepository.findByUserAndDismissedFalseAndGeneratedAtBetweenOrderByGeneratedAtDesc(
                 eq(USER), any(), any())).thenReturn(List.of(a));
-        when(linkedInPromptBuilder.buildPeriod(List.of(a), FROM, TO)).thenReturn("prompt");
-        when(linkedInPromptBuilder.buildPeriodRetry(eq(List.of(a)), eq(FROM), eq(TO), any()))
+        when(linkedInPromptBuilder.buildPeriod(eq(List.of(a)), eq(FROM), eq(TO), any())).thenReturn("prompt");
+        when(linkedInPromptBuilder.buildPeriodRetry(eq(List.of(a)), eq(FROM), eq(TO), any(), any()))
                 .thenReturn("retry-prompt");
         when(llmService.generate("prompt")).thenReturn("""
                 {"paragraphs":["one short paragraph"],"confidence":0.9}
@@ -144,8 +149,8 @@ class LinkedInPostServiceTest {
         AchievementEntity a = AchievementEntity.builder().title("A").resumeBullet("Did A").build();
         when(achievementRepository.findByUserAndDismissedFalseAndGeneratedAtBetweenOrderByGeneratedAtDesc(
                 eq(USER), any(), any())).thenReturn(List.of(a));
-        when(linkedInPromptBuilder.buildPeriod(List.of(a), FROM, TO)).thenReturn("prompt");
-        when(linkedInPromptBuilder.buildPeriodRetry(eq(List.of(a)), eq(FROM), eq(TO), any()))
+        when(linkedInPromptBuilder.buildPeriod(eq(List.of(a)), eq(FROM), eq(TO), any())).thenReturn("prompt");
+        when(linkedInPromptBuilder.buildPeriodRetry(eq(List.of(a)), eq(FROM), eq(TO), any(), any()))
                 .thenReturn("retry-prompt");
         when(llmService.generate("prompt")).thenReturn("""
                 {"paragraphs":["our team shipped this"],"confidence":0.9}
@@ -196,7 +201,8 @@ class LinkedInPostServiceTest {
         // Query returns newest-first, same convention as the period path.
         when(achievementRepository.findByIdInAndUserAndDismissedFalseOrderByGeneratedAtDesc(
                 List.of(1L, 2L), USER)).thenReturn(List.of(b, a));
-        when(linkedInPromptBuilder.buildPeriod(List.of(b, a), LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 15)))
+        when(linkedInPromptBuilder.buildPeriod(
+                eq(List.of(b, a)), eq(LocalDate.of(2026, 7, 1)), eq(LocalDate.of(2026, 7, 15)), any()))
                 .thenReturn("prompt");
         when(llmService.generate("prompt")).thenReturn("""
                 {"paragraphs":["p"],"confidence":0.9}
@@ -214,7 +220,8 @@ class LinkedInPostServiceTest {
                 .generatedAt(LocalDateTime.of(2026, 7, 1, 0, 0)).build();
         when(achievementRepository.findByIdInAndUserAndDismissedFalseOrderByGeneratedAtDesc(
                 List.of(1L), USER)).thenReturn(List.of(a));
-        when(linkedInPromptBuilder.buildPeriod(List.of(a), LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 1)))
+        when(linkedInPromptBuilder.buildPeriod(
+                eq(List.of(a)), eq(LocalDate.of(2026, 7, 1)), eq(LocalDate.of(2026, 7, 1)), any()))
                 .thenReturn("prompt");
         when(llmService.generate("prompt")).thenReturn("""
                 {"paragraphs":["p"],"confidence":0.9}
@@ -230,7 +237,7 @@ class LinkedInPostServiceTest {
         AchievementEntity achievement = AchievementEntity.builder().id(5L).user(USER).title("A").build();
         when(achievementRepository.findByIdAndUser(5L, USER)).thenReturn(java.util.Optional.of(achievement));
         when(linkedInPostPersistenceService.findByAchievement(achievement)).thenReturn(java.util.Optional.empty());
-        when(linkedInPromptBuilder.build(achievement)).thenReturn("prompt");
+        when(linkedInPromptBuilder.build(eq(achievement), any())).thenReturn("prompt");
         when(llmService.generate("prompt")).thenReturn("""
                 {"headline":"h","post":"p","confidence":0.9}
                 """);
@@ -246,7 +253,7 @@ class LinkedInPostServiceTest {
         AchievementEntity achievement = AchievementEntity.builder().id(5L).user(USER).title("A").build();
         when(achievementRepository.findByIdAndUser(5L, USER)).thenReturn(java.util.Optional.of(achievement));
         when(linkedInPostPersistenceService.findByAchievement(achievement)).thenReturn(java.util.Optional.empty());
-        when(linkedInPromptBuilder.build(achievement)).thenReturn("prompt");
+        when(linkedInPromptBuilder.build(eq(achievement), any())).thenReturn("prompt");
         when(llmService.generate("prompt")).thenReturn("""
                 {"headline":"h","post":"I leveraged the plan and enhanced results.","confidence":0.9}
                 """);
@@ -264,7 +271,7 @@ class LinkedInPostServiceTest {
         AchievementEntity achievement = AchievementEntity.builder().id(5L).user(USER).title("A").build();
         when(achievementRepository.findByIdAndUser(5L, USER)).thenReturn(java.util.Optional.of(achievement));
         when(linkedInPostPersistenceService.findByAchievement(achievement)).thenReturn(java.util.Optional.empty());
-        when(linkedInPromptBuilder.build(achievement)).thenReturn("prompt");
+        when(linkedInPromptBuilder.build(eq(achievement), any())).thenReturn("prompt");
         when(llmService.generate("prompt")).thenReturn("""
                 {"headline":"h","post":"one short paragraph, no breaks at all","confidence":0.9}
                 """);

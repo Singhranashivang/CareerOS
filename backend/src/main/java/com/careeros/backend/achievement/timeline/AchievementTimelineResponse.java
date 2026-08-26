@@ -34,6 +34,9 @@ public class AchievementTimelineResponse {
 
     private LocalDateTime generatedAt;
 
+    /** "2026-Q1" — always populated regardless of goal; PERFORMANCE_REVIEW is what makes the ORDER group by it, see AchievementTimelineService. */
+    private String quarter;
+
     private boolean userEdited;
     private boolean dismissed;
 
@@ -54,8 +57,18 @@ public class AchievementTimelineResponse {
                 .starResult(entity.getStarResult())
                 .confidence(entity.getConfidence())
                 .generatedAt(entity.getGeneratedAt())
+                .quarter(quarterOf(entity.getGeneratedAt()))
                 .userEdited(entity.isUserEdited())
                 .dismissed(entity.isDismissed())
                 .build();
+    }
+
+    /** Null generatedAt (shouldn't happen, but AchievementEntity doesn't enforce it) sorts as no quarter at all. */
+    public static String quarterOf(LocalDateTime generatedAt) {
+        if (generatedAt == null) {
+            return null;
+        }
+        int quarterNumber = (generatedAt.getMonthValue() - 1) / 3 + 1;
+        return generatedAt.getYear() + "-Q" + quarterNumber;
     }
 }

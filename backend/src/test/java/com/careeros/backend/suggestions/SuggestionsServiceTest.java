@@ -51,7 +51,7 @@ class SuggestionsServiceTest {
                         .externalPostId("noop-" + java.util.UUID.randomUUID()).build()));
         when(githubRepositoryRepository.findByUser(USER)).thenReturn(List.of());
         when(achievementRepository.countPerRepository(USER)).thenReturn(List.of());
-        when(suggestionScorer.score(any(), anyBoolean()))
+        when(suggestionScorer.score(any(), anyBoolean(), any()))
                 .thenReturn(new SuggestionScorer.Scored(1.0, "reason"));
 
         SuggestionsResponse result = service.suggestionsFor(USER);
@@ -72,7 +72,7 @@ class SuggestionsServiceTest {
                 ScheduledPost.builder().achievement(posted).postedAt(OffsetDateTime.now()).build()));
         when(githubRepositoryRepository.findByUser(USER)).thenReturn(List.of());
         when(achievementRepository.countPerRepository(USER)).thenReturn(List.of());
-        when(suggestionScorer.score(any(), anyBoolean()))
+        when(suggestionScorer.score(any(), anyBoolean(), any()))
                 .thenReturn(new SuggestionScorer.Scored(1.0, "reason"));
 
         SuggestionsResponse result = service.suggestionsFor(USER);
@@ -90,8 +90,8 @@ class SuggestionsServiceTest {
         when(scheduledPostRepository.findByUserAndStatus(USER, PostStatus.POSTED)).thenReturn(List.of());
         when(githubRepositoryRepository.findByUser(USER)).thenReturn(List.of());
         when(achievementRepository.countPerRepository(USER)).thenReturn(List.of());
-        when(suggestionScorer.score(low, false)).thenReturn(new SuggestionScorer.Scored(0.2, "low reason"));
-        when(suggestionScorer.score(high, false)).thenReturn(new SuggestionScorer.Scored(0.9, "high reason"));
+        when(suggestionScorer.score(eq(low), eq(false), any())).thenReturn(new SuggestionScorer.Scored(0.2, "low reason"));
+        when(suggestionScorer.score(eq(high), eq(false), any())).thenReturn(new SuggestionScorer.Scored(0.9, "high reason"));
 
         SuggestionsResponse result = service.suggestionsFor(USER);
 
@@ -110,13 +110,13 @@ class SuggestionsServiceTest {
                 ScheduledPost.builder().achievement(postedInRepoA).postedAt(OffsetDateTime.now()).build()));
         when(githubRepositoryRepository.findByUser(USER)).thenReturn(List.of());
         when(achievementRepository.countPerRepository(USER)).thenReturn(List.of());
-        when(suggestionScorer.score(any(), anyBoolean()))
+        when(suggestionScorer.score(any(), anyBoolean(), any()))
                 .thenReturn(new SuggestionScorer.Scored(1.0, "reason"));
 
         service.suggestionsFor(USER);
 
-        verify(suggestionScorer).score(unpostedInRepoA, true);
-        verify(suggestionScorer).score(unpostedInRepoB, false);
+        verify(suggestionScorer).score(unpostedInRepoA, true, null);
+        verify(suggestionScorer).score(unpostedInRepoB, false, null);
     }
 
     @Test
@@ -159,7 +159,7 @@ class SuggestionsServiceTest {
                 ScheduledPost.builder().achievement(postedAchievement).postedAt(OffsetDateTime.now()).build()));
         when(githubRepositoryRepository.findByUser(USER)).thenReturn(List.of());
         when(achievementRepository.countPerRepository(USER)).thenReturn(List.of());
-        when(suggestionScorer.score(any(), anyBoolean()))
+        when(suggestionScorer.score(any(), anyBoolean(), any()))
                 .thenReturn(new SuggestionScorer.Scored(1.0, "reason"));
 
         SuggestionsResponse result = service.suggestionsFor(USER);
@@ -178,8 +178,9 @@ class SuggestionsServiceTest {
                 .thenReturn(List.of(withAchievements, withoutAchievements));
         when(achievementRepository.countPerRepository(USER)).thenReturn(List.of(
                 projection(1L, 3L)));
-        when(githubCommitRepository.existsByRepositoryAndCommittedAtAfter(eq(withoutAchievements), any()))
-                .thenReturn(true);
+        // withoutAchievements has no lastAnalyzedAt — hasUnanalyzedOwnerCommits takes the
+        // never-analyzed branch (countByRepository), not existsByRepositoryAndCommittedAtAfter.
+        when(githubCommitRepository.countByRepository(withoutAchievements)).thenReturn(1L);
 
         SuggestionsResponse result = service.suggestionsFor(USER);
 

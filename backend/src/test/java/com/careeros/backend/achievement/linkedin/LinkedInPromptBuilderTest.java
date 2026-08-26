@@ -1,6 +1,8 @@
 package com.careeros.backend.achievement.linkedin;
 
 import com.careeros.backend.achievement.record.AchievementEntity;
+import com.careeros.backend.user.User;
+import com.careeros.backend.user.UserGoal;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -249,5 +251,105 @@ class LinkedInPromptBuilderTest {
         assertThat(retry).contains("Your previous attempt had these problems: "
                 + "only 1 paragraph break — needs at least 2; only 90 words — needs at least 140");
         assertThat(retry).contains("Rewrite the whole post from scratch");
+    }
+
+    @Test
+    void noGoalOnTheAchievementsUserAddsNoGoalInstruction() {
+        AchievementEntity achievement = AchievementEntity.builder().title("A").build();
+
+        assertThat(builder.build(achievement)).doesNotContain("GOAL:");
+    }
+
+    @Test
+    void audienceBuildingGoalAsksToLeanIntoTheSurprisingOpeningFact() {
+        User user = User.builder().goal(UserGoal.AUDIENCE_BUILDING).build();
+        AchievementEntity achievement = AchievementEntity.builder().title("A").user(user).build();
+
+        String prompt = builder.build(achievement);
+
+        assertThat(prompt).contains("GOAL: AUDIENCE BUILDING");
+        assertThat(prompt).contains("surprising");
+    }
+
+    @Test
+    void jobHuntingGoalAsksToNameTechnologies() {
+        User user = User.builder().goal(UserGoal.JOB_HUNTING).build();
+        AchievementEntity achievement = AchievementEntity.builder().title("A").user(user).build();
+
+        assertThat(builder.build(achievement)).contains("GOAL: JOB HUNTING").contains("technologies");
+    }
+
+    @Test
+    void performanceReviewGoalAsksToEmphasizeScopeOverNarrative() {
+        User user = User.builder().goal(UserGoal.PERFORMANCE_REVIEW).build();
+        AchievementEntity achievement = AchievementEntity.builder().title("A").user(user).build();
+
+        assertThat(builder.build(achievement)).contains("GOAL: PERFORMANCE REVIEW").contains("scope");
+    }
+
+    @Test
+    void periodPromptTakesTheGoalFromTheFirstAchievementsUser() {
+        User user = User.builder().goal(UserGoal.AUDIENCE_BUILDING).build();
+        AchievementEntity achievement = AchievementEntity.builder()
+                .title("A").resumeBullet("Did A").repositoryName("Repo").user(user).build();
+
+        String prompt = builder.buildPeriod(List.of(achievement), LocalDate.of(2026, 7, 1), LocalDate.of(2026, 8, 1));
+
+        assertThat(prompt).contains("GOAL: AUDIENCE BUILDING");
+    }
+
+    @Test
+    void noVoiceSamplesLeavesThePromptExactlyAsItWasBeforeTheSectionExisted() {
+        AchievementEntity achievement = AchievementEntity.builder().title("A").resumeBullet("Did A").build();
+
+        assertThat(builder.build(achievement, List.of()))
+                .isEqualTo(builder.build(achievement))
+                .doesNotContain("PREFERRED VOICE");
+    }
+
+    @Test
+    void voiceSamplesAppearVerbatimUnderAPreferredVoiceHeading() {
+        AchievementEntity achievement = AchievementEntity.builder().title("A").resumeBullet("Did A").build();
+
+        String prompt = builder.build(achievement,
+                List.of("Spent Tuesday chasing a null.", "Deleted more than I wrote this week."));
+
+        assertThat(prompt).contains("PREFERRED VOICE");
+        assertThat(prompt).contains("--- sample 1 ---\nSpent Tuesday chasing a null.");
+        assertThat(prompt).contains("--- sample 2 ---\nDeleted more than I wrote this week.");
+    }
+
+    @Test
+    void voiceSamplesAreFramedAsSamplesRatherThanRules() {
+        AchievementEntity achievement = AchievementEntity.builder().title("A").build();
+
+        String prompt = builder.build(achievement, List.of("A rewrite."));
+
+        assertThat(prompt).contains("samples, not rules");
+        // The rules must be stated to outrank them, or the model treats a sample as licence.
+        assertThat(prompt).contains("the rule wins");
+        // Register and length are what to copy; content is explicitly not.
+        assertThat(prompt).contains("Do not reuse their facts");
+    }
+
+    @Test
+    void voiceSamplesSurviveTheRetryPrompt() {
+        AchievementEntity achievement = AchievementEntity.builder().title("A").build();
+
+        String retry = builder.buildRetry(achievement, List.of("used a banned word"), List.of("A rewrite."));
+
+        assertThat(retry).contains("PREFERRED VOICE").contains("A rewrite.");
+        assertThat(retry).contains("Your previous attempt had these problems");
+    }
+
+    @Test
+    void voiceSamplesReachThePeriodPromptToo() {
+        AchievementEntity achievement = AchievementEntity.builder()
+                .title("A").resumeBullet("Did A").repositoryName("Repo").build();
+
+        String prompt = builder.buildPeriod(
+                List.of(achievement), LocalDate.of(2026, 7, 1), LocalDate.of(2026, 8, 1), List.of("A rewrite."));
+
+        assertThat(prompt).contains("PREFERRED VOICE").contains("A rewrite.");
     }
 }

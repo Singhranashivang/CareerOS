@@ -4,6 +4,7 @@ import com.careeros.backend.achievement.evidence.Evidence;
 import com.careeros.backend.achievement.extractor.Feature;
 import com.careeros.backend.achievement.knowledge.RepositoryKnowledge;
 import com.careeros.backend.achievement.llm.BannedVocabulary;
+import com.careeros.backend.user.UserGoal;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -29,7 +30,7 @@ public class AchievementPromptBuilder {
     private static final int SHORTENED_MAX_DIFFS = 5;
 
     public String build(RepositoryKnowledge knowledge, Evidence evidence) {
-        return build(knowledge, evidence, null, null);
+        return build(knowledge, evidence, null, null, null);
     }
 
     /**
@@ -40,17 +41,28 @@ public class AchievementPromptBuilder {
      * same subsystem from scratch.
      */
     public String build(RepositoryKnowledge knowledge, Evidence evidence, String priorTitle, String priorResumeBullet) {
-        return build(knowledge, evidence, priorTitle, priorResumeBullet,
+        return build(knowledge, evidence, priorTitle, priorResumeBullet, null);
+    }
+
+    /** goal is the generating user's UserGoal (User.goal) — null means no goal set, no extra instruction. */
+    public String build(
+            RepositoryKnowledge knowledge, Evidence evidence, String priorTitle, String priorResumeBullet, UserGoal goal) {
+        return build(knowledge, evidence, priorTitle, priorResumeBullet, goal,
                 MAX_CHANGED_FILES, MAX_FEATURE_EVIDENCE, MAX_DIFFS);
     }
 
     /** Used for the one retry on schema drift, per AchievementGeneratorService. */
     public String buildShortened(RepositoryKnowledge knowledge, Evidence evidence) {
-        return buildShortened(knowledge, evidence, null, null);
+        return buildShortened(knowledge, evidence, null, null, null);
     }
 
     public String buildShortened(RepositoryKnowledge knowledge, Evidence evidence, String priorTitle, String priorResumeBullet) {
-        return build(knowledge, evidence, priorTitle, priorResumeBullet,
+        return buildShortened(knowledge, evidence, priorTitle, priorResumeBullet, null);
+    }
+
+    public String buildShortened(
+            RepositoryKnowledge knowledge, Evidence evidence, String priorTitle, String priorResumeBullet, UserGoal goal) {
+        return build(knowledge, evidence, priorTitle, priorResumeBullet, goal,
                 SHORTENED_MAX_CHANGED_FILES, SHORTENED_MAX_FEATURE_EVIDENCE, SHORTENED_MAX_DIFFS);
     }
 
@@ -64,9 +76,9 @@ public class AchievementPromptBuilder {
      */
     public String buildRetryForVagueTitle(
             RepositoryKnowledge knowledge, Evidence evidence,
-            String priorTitle, String priorResumeBullet,
+            String priorTitle, String priorResumeBullet, UserGoal goal,
             String vagueTitle, String reason) {
-        return build(knowledge, evidence, priorTitle, priorResumeBullet)
+        return build(knowledge, evidence, priorTitle, priorResumeBullet, goal)
                 + "\n\nYour previous title was \"" + vagueTitle + "\" — " + reason + ". Rewrite the whole "
                 + "achievement from scratch. The title must name the specific file, class, method, or "
                 + "technology this change touched — not a role, category, or badge-shaped label like "
@@ -78,6 +90,7 @@ public class AchievementPromptBuilder {
             Evidence evidence,
             String priorTitle,
             String priorResumeBullet,
+            UserGoal goal,
             int maxChangedFiles,
             int maxFeatureEvidence,
             int maxDiffs
@@ -262,6 +275,11 @@ Every field is OPTIONAL except title. Send "" for any field the evidence
 does not support. An omitted field is correct — it means you found nothing
 to say there. An invented field is a failure. Two grounded sentences beat
 six padded ones.
+""");
+
+        prompt.append(goalInstruction(goal));
+
+        prompt.append("""
 
 Every sentence you write must be traceable to something in the evidence
 above: a specific file, class, method, commit message, dependency, or diff
@@ -335,6 +353,47 @@ Return ONLY the JSON object now.
 """);
 
         return prompt.toString();
+    }
+
+    /**
+     * The one place User.goal reaches achievement generation. Empty string
+     * (not null) for no goal — appended unconditionally by the caller, same
+     * pattern as every other optional prompt section here.
+     */
+    private static String goalInstruction(UserGoal goal) {
+        if (goal == null) {
+            return "";
+        }
+        return switch (goal) {
+            case JOB_HUNTING -> """
+
+GOAL: JOB HUNTING
+
+This achievement may be used on a resume or in a job application. Favor
+breadth: if the evidence touches more than one technology from the
+Technologies list above, name each one it actually supports rather than
+picking just one. Keep resumeBullet phrased like a resume line — one
+concrete, ATS-readable sentence naming the work and the technology, not
+narrative color.
+""";
+            case AUDIENCE_BUILDING -> """
+
+GOAL: AUDIENCE BUILDING
+
+This achievement may become a LinkedIn post. Favor narrative and any
+surprising or counterintuitive detail actually present in the evidence — an
+unexpected bug, a non-obvious trade-off, a workaround that wasn't the first
+approach — over a plain restatement of what changed.
+""";
+            case PERFORMANCE_REVIEW -> """
+
+GOAL: PERFORMANCE REVIEW
+
+This achievement may be cited in a performance review. Favor scope and
+impact — the size of the change (files touched, lines changed, systems
+affected) and what now measurably works differently — over stylistic color.
+""";
+        };
     }
 
     private static void appendCapped(

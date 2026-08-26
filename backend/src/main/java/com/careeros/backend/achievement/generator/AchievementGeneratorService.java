@@ -26,6 +26,7 @@ import com.careeros.backend.github.GithubRepository;
 import com.careeros.backend.github.RepositoryAnalysisRecorder;
 import com.careeros.backend.githubcommit.GithubCommit;
 import com.careeros.backend.githubcommit.GithubCommitRepository;
+import com.careeros.backend.user.UserGoal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -401,7 +402,8 @@ public class AchievementGeneratorService {
                 output.getTitle(), label, titleReason.get());
 
         String retryPrompt = achievementPromptBuilder.buildRetryForVagueTitle(
-                knowledge, evidence, priorTitle, priorResumeBullet, output.getTitle(), titleReason.get());
+                knowledge, evidence, priorTitle, priorResumeBullet, goalOf(repository),
+                output.getTitle(), titleReason.get());
         AchievementOutput retried = callAndParse(retryPrompt, repository);
 
         if (retried.isInsufficient()) {
@@ -466,9 +468,10 @@ public class AchievementGeneratorService {
             String priorTitle,
             String priorResumeBullet
     ) {
+        var goal = goalOf(repository);
         String prompt = shortened
-                ? achievementPromptBuilder.buildShortened(knowledge, evidence, priorTitle, priorResumeBullet)
-                : achievementPromptBuilder.build(knowledge, evidence, priorTitle, priorResumeBullet);
+                ? achievementPromptBuilder.buildShortened(knowledge, evidence, priorTitle, priorResumeBullet, goal)
+                : achievementPromptBuilder.build(knowledge, evidence, priorTitle, priorResumeBullet, goal);
 
         return callAndParse(prompt, repository);
     }
@@ -546,6 +549,11 @@ public class AchievementGeneratorService {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    /** User is @ManyToOne(optional = false) so this is only ever null in a test fixture built without one. */
+    private static UserGoal goalOf(GithubRepository repository) {
+        return repository.getUser() == null ? null : repository.getUser().getGoal();
     }
 
     /** Message a user could read, rather than a stack frame. */

@@ -37,8 +37,18 @@ public class ScheduledPost {
     @Column(nullable = false, length = 32)
     private PostPlatform platform;
 
+    /** The current text — the user's edit if they made one, otherwise the same as generatedBody. */
     @Column(nullable = false, columnDefinition = "TEXT")
     private String body;
+
+    /**
+     * The generated text as it stood when this post was created, snapshotted so
+     * a later regenerate can't rewrite history. Null when the post didn't come
+     * from a generated LinkedIn post at all — null means "no pair to compare",
+     * not "the user changed nothing".
+     */
+    @Column(name = "generated_body", columnDefinition = "TEXT")
+    private String generatedBody;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
@@ -119,5 +129,16 @@ public class ScheduledPost {
     private void releaseClaim() {
         this.claimedBy = null;
         this.claimedAt = null;
+    }
+
+    /**
+     * NoOpPublisher (still standing in for the real LinkedIn publish call)
+     * marks every post POSTED and stamps postedAt regardless of whether
+     * anything actually went anywhere — it just logs the body and returns
+     * "noop-<uuid>" as the external id. Nothing reading POSTED posts should
+     * treat one of these as "the user posted" — filter on this first.
+     */
+    public boolean wasActuallyPublished() {
+        return externalPostId == null || !externalPostId.startsWith("noop-");
     }
 }

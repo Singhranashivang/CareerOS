@@ -26,6 +26,15 @@ public interface GithubCommitRepository
     /** Every stored commit is already owner-authored — see GithubCommitService.authoredBy. */
     boolean existsByRepositoryAndCommittedAtAfter(GithubRepository repository, LocalDateTime since);
 
+    long countByRepositoryAndCommittedAtAfter(GithubRepository repository, LocalDateTime since);
+
+    /** The oldest never-analyzed commit — how long unanalyzed work has been sitting, for StalenessDetector. */
+    Optional<GithubCommit> findFirstByRepositoryOrderByCommittedAtAsc(GithubRepository repository);
+
+    /** The oldest commit after the last analysis — same purpose as above, once a repo has been analyzed once. */
+    Optional<GithubCommit> findFirstByRepositoryAndCommittedAtAfterOrderByCommittedAtAsc(
+            GithubRepository repository, LocalDateTime since);
+
     @Query("""
            select c.repository.id as repositoryId, count(c) as total
            from GithubCommit c

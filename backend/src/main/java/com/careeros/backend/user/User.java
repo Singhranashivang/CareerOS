@@ -38,6 +38,11 @@ public class User {
     @Builder.Default
     private String timezone = "UTC";
 
+    /** Null until asked during onboarding. See UserGoal for what changes once it's set. */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 32)
+    private UserGoal goal;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

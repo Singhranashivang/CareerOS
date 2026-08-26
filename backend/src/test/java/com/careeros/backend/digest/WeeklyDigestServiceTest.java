@@ -34,12 +34,13 @@ class WeeklyDigestServiceTest {
     private final AchievementGeneratorService achievementGeneratorService = mock(AchievementGeneratorService.class);
     private final RateLimiter rateLimiter = mock(RateLimiter.class);
     private final WeeklyDigestRunService weeklyDigestRunService = mock(WeeklyDigestRunService.class);
+    private final WeeklyEmailService weeklyEmailService = mock(WeeklyEmailService.class);
     private final AuditLogService auditLogService = mock(AuditLogService.class);
 
     private final WeeklyDigestService service = new WeeklyDigestService(
             userRepository, githubTokenEncryptor, githubRepositoryService, githubRepositoryRepository,
             githubCommitService, githubCommitRepository, githubPullRequestService,
-            achievementGeneratorService, rateLimiter, weeklyDigestRunService, auditLogService);
+            achievementGeneratorService, rateLimiter, weeklyDigestRunService, weeklyEmailService, auditLogService);
 
     private static final User USER = User.builder()
             .id(1L).githubId(100L).username("u").githubAccessToken("cipher").build();
@@ -55,7 +56,7 @@ class WeeklyDigestServiceTest {
 
         verify(weeklyDigestRunService).record(
                 eq(user), eq(WeeklyDigestOutcome.SKIPPED), any(), eq(0), eq(0), eq(0), eq(0));
-        verifyNoInteractions(githubRepositoryService, achievementGeneratorService);
+        verifyNoInteractions(githubRepositoryService, achievementGeneratorService, weeklyEmailService);
     }
 
     @Test
@@ -68,7 +69,7 @@ class WeeklyDigestServiceTest {
 
         verify(weeklyDigestRunService).record(
                 eq(USER), eq(WeeklyDigestOutcome.SKIPPED), any(), eq(0), eq(0), eq(0), eq(0));
-        verifyNoInteractions(githubRepositoryService, achievementGeneratorService);
+        verifyNoInteractions(githubRepositoryService, achievementGeneratorService, weeklyEmailService);
         // Skipped is not a security-relevant failure worth auditing — only a real run outcome is.
         verifyNoInteractions(auditLogService);
     }
@@ -95,6 +96,9 @@ class WeeklyDigestServiceTest {
         verify(achievementGeneratorService).generate(repoA, "token");
         verify(achievementGeneratorService, never()).generate(eq(repoB), any());
         verify(weeklyDigestRunService).record(USER, WeeklyDigestOutcome.COMPLETED, null, 2, 3, 1, 1);
+        // Push, not pull: a completed run always gets a chance to email,
+        // independent of whether it produced anything new.
+        verify(weeklyEmailService).sendIfWorthSaying(eq(USER), any());
     }
 
     @Test
@@ -116,5 +120,21 @@ class WeeklyDigestServiceTest {
 
         verify(achievementGeneratorService).generate(repoB, "token");
         verify(weeklyDigestRunService).record(USER, WeeklyDigestOutcome.COMPLETED, null, 2, 0, 2, 1);
+        verify(weeklyEmailService).sendIfWorthSaying(eq(USER), any());
+    }
+
+    @Test
+    void aRunThatThrowsNeverSendsAnEmail() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(USER));
+        when(githubTokenEncryptor.decrypt("cipher")).thenReturn("token");
+        when(weeklyDigestRunService.findByUser(USER)).thenReturn(Optional.empty());
+        when(githubRepositoryService.syncRepositories(USER)).thenThrow(new RuntimeException("GitHub is down"));
+
+        service.runForUser(1L);
+
+        verify(weeklyDigestRunService).record(
+                eq(USER), eq(WeeklyDigestOutcome.ERROR), any(), eq(0), eq(0), eq(0), eq(0));
+        // The sync/analyze work never completed — nothing confirmed worth reporting on.
+        verifyNoInteractions(weeklyEmailService);
     }
 }

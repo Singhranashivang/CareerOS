@@ -2,6 +2,7 @@ package com.careeros.backend.achievement.linkedin;
 
 import com.careeros.backend.achievement.llm.BannedVocabulary;
 import com.careeros.backend.achievement.record.AchievementEntity;
+import com.careeros.backend.user.UserGoal;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -228,7 +229,108 @@ public class LinkedInPromptBuilder {
             + PERIOD_OUTPUT_JSON;
 
     public String build(AchievementEntity achievement) {
-        return HEADER + evidenceSection(achievement) + "\nReturn JSON only.\n";
+        return build(achievement, List.of());
+    }
+
+    /**
+     * voiceSamples are the user's own rewrites of earlier generated posts, or
+     * empty below the threshold — see PreferredVoiceExamples, which owns both
+     * the threshold and the decision to pass only the edited half of each pair.
+     */
+    public String build(AchievementEntity achievement, List<String> voiceSamples) {
+        return HEADER + goalInstruction(goalOf(achievement)) + voiceSection(voiceSamples)
+                + evidenceSection(achievement) + "\nReturn JSON only.\n";
+    }
+
+    /**
+     * Samples, deliberately not rules. Everything about the framing here is
+     * chosen to stop the model mining them for instructions: they sit after
+     * the rules rather than among them, they say outright that they lose to
+     * the rules above, and they name the two things worth copying (register,
+     * length) and the things that aren't (facts, phrasing, subject matter).
+     * Without that last part the model reliably borrows the sample's content —
+     * these are real posts about real unrelated work, so a borrowed detail
+     * reads as a plausible invented fact rather than as obvious nonsense.
+     *
+     * Empty list yields an empty string, so a user below the threshold gets a
+     * prompt byte-identical to one built before this section existed.
+     */
+    private static String voiceSection(List<String> voiceSamples) {
+
+        if (voiceSamples == null || voiceSamples.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder section = new StringBuilder("""
+
+                PREFERRED VOICE
+
+                Below are posts this user wrote or rewrote themselves. They are how
+                this user writes when they're happy with the result.
+
+                They are samples, not rules. Nothing in them overrides the SHAPE,
+                VOICE, or SUBSTANCE rules above — if a sample breaks one of those
+                rules, the rule wins. Match how they sound and roughly how long they
+                run: sentence length, how formal or blunt they are, how much they
+                explain. Do not reuse their facts, their phrasing, their opening
+                lines, or their subject matter — they describe different work than
+                the evidence below, and borrowing a detail from one is inventing a
+                fact about this achievement.
+                """);
+
+        for (int i = 0; i < voiceSamples.size(); i++) {
+            section.append("\n--- sample ").append(i + 1).append(" ---\n")
+                    .append(voiceSamples.get(i).strip()).append("\n");
+        }
+
+        section.append("\n====================\n");
+        return section.toString();
+    }
+
+    private static UserGoal goalOf(AchievementEntity achievement) {
+        return achievement.getUser() == null ? null : achievement.getUser().getGoal();
+    }
+
+    /**
+     * The one place User.goal reaches LinkedIn post generation. Empty string
+     * (not null) for no goal — appended unconditionally, same pattern as
+     * every other optional prompt section here. Lighter-touch than
+     * AchievementPromptBuilder's version of this: HEADER already establishes
+     * a narrative, developer-talking voice that a goal instruction should
+     * bend, not fight.
+     */
+    private static String goalInstruction(UserGoal goal) {
+        if (goal == null) {
+            return "";
+        }
+        return switch (goal) {
+            case JOB_HUNTING -> """
+
+                    GOAL: JOB HUNTING
+
+                    Where the evidence supports it, name the specific technologies used —
+                    breadth of stack is worth surfacing here, even briefly.
+
+                    """;
+            case AUDIENCE_BUILDING -> """
+
+                    GOAL: AUDIENCE BUILDING
+
+                    Lean fully into the SHAPE rule above: open with the most surprising or
+                    counterintuitive fact, and don't shy away from the messy or uncertain
+                    part of the story — that's what makes it worth reading.
+
+                    """;
+            case PERFORMANCE_REVIEW -> """
+
+                    GOAL: PERFORMANCE REVIEW
+
+                    Emphasize the scope of the change — systems affected, size of the
+                    change — over the narrative arc. This post may double as a record of
+                    impact.
+
+                    """;
+        };
     }
 
     /**
@@ -290,16 +392,35 @@ public class LinkedInPromptBuilder {
      * either kind.
      */
     public String buildRetry(AchievementEntity achievement, List<String> problems) {
-        return build(achievement) + retrySuffix(problems);
+        return buildRetry(achievement, problems, List.of());
+    }
+
+    /** Carries the samples into the retry — a retry that dropped them would answer in a different voice than the first attempt. */
+    public String buildRetry(AchievementEntity achievement, List<String> problems, List<String> voiceSamples) {
+        return build(achievement, voiceSamples) + retrySuffix(problems);
     }
 
     public String buildPeriod(List<AchievementEntity> achievements, LocalDate from, LocalDate to) {
-        return PERIOD_HEADER + periodEvidenceSection(achievements, from, to) + "\nReturn JSON only.\n";
+        return buildPeriod(achievements, from, to, List.of());
+    }
+
+    /** Same samples as the single-achievement prompt — one user, one voice, whichever post shape they're writing. */
+    public String buildPeriod(
+            List<AchievementEntity> achievements, LocalDate from, LocalDate to, List<String> voiceSamples) {
+        UserGoal goal = achievements.isEmpty() ? null : goalOf(achievements.get(0));
+        return PERIOD_HEADER + goalInstruction(goal) + voiceSection(voiceSamples)
+                + periodEvidenceSection(achievements, from, to) + "\nReturn JSON only.\n";
     }
 
     public String buildPeriodRetry(
             List<AchievementEntity> achievements, LocalDate from, LocalDate to, List<String> problems) {
-        return buildPeriod(achievements, from, to) + retrySuffix(problems);
+        return buildPeriodRetry(achievements, from, to, problems, List.of());
+    }
+
+    public String buildPeriodRetry(
+            List<AchievementEntity> achievements, LocalDate from, LocalDate to,
+            List<String> problems, List<String> voiceSamples) {
+        return buildPeriod(achievements, from, to, voiceSamples) + retrySuffix(problems);
     }
 
     private static String retrySuffix(List<String> problems) {

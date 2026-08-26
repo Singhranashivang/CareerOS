@@ -1,5 +1,7 @@
 package com.careeros.backend.schedule;
 
+import com.careeros.backend.achievement.linkedinrecord.LinkedInPostEntity;
+import com.careeros.backend.achievement.linkedinrecord.LinkedInPostPersistenceService;
 import com.careeros.backend.achievement.record.AchievementEntity;
 import com.careeros.backend.achievement.record.AchievementRepository;
 import com.careeros.backend.schedule.dto.CreateScheduledPostRequest;
@@ -31,6 +33,7 @@ public class ScheduledPostService {
 
     private final ScheduledPostRepository scheduledPostRepository;
     private final AchievementRepository achievementRepository;
+    private final LinkedInPostPersistenceService linkedInPostPersistenceService;
 
 
     /**
@@ -81,12 +84,36 @@ public class ScheduledPostService {
                 .achievement(achievement)
                 .platform(request.platform())
                 .body(body)
+                .generatedBody(generatedBodyFor(request.platform(), achievement))
                 .status(status)
                 .scheduledFor(request.scheduledFor())
                 .userTimezone(normalizeZone(request.userTimezone()))
                 .build();
 
         return ScheduledPostResponse.from(scheduledPostRepository.save(post));
+    }
+
+    /**
+     * The generated text this post started from, snapshotted at creation so the
+     * pair survives a later regenerate (which overwrites linkedin_posts.post).
+     *
+     * Captured here rather than trusting the client to send it: the request's
+     * body is already the edited text whenever the user changed it in the
+     * editor before scheduling, so comparing the two at create time is what
+     * catches an edit made before the post was ever persisted. An edit made
+     * afterwards, via PATCH, lands on body and leaves this snapshot alone —
+     * both routes end up as the same pair.
+     *
+     * Null unless this is a LinkedIn post generated from an achievement; see
+     * ScheduledPost.generatedBody for why null is not "unedited".
+     */
+    private String generatedBodyFor(PostPlatform platform, AchievementEntity achievement) {
+        if (platform != PostPlatform.LINKEDIN || achievement == null) {
+            return null;
+        }
+        return linkedInPostPersistenceService.findByAchievement(achievement)
+                .map(LinkedInPostEntity::getPost)
+                .orElse(null);
     }
 
     @Transactional

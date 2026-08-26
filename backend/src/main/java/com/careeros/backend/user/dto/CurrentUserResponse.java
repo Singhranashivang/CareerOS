@@ -1,6 +1,7 @@
 package com.careeros.backend.user.dto;
 
 import com.careeros.backend.user.User;
+import com.careeros.backend.user.UserGoal;
 
 import java.time.LocalDateTime;
 
@@ -11,6 +12,7 @@ public record CurrentUserResponse(
         String name,
         String email,
         String avatarUrl,
+        UserGoal goal,
         LocalDateTime createdAt
 ) {
     public static CurrentUserResponse from(User user) {
@@ -21,6 +23,7 @@ public record CurrentUserResponse(
                 user.getName(),
                 user.getEmail(),
                 user.getAvatarUrl(),
+                user.getGoal(),
                 user.getCreatedAt()
         );
     }

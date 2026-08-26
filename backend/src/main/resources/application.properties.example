@@ -55,6 +55,47 @@ app.achievement.min-confidence=0.5
 app.scheduling.enabled=true
 app.scheduling.worker-id=${HOSTNAME:local}
 
+# Preferred-voice samples (PreferredVoiceExamples). An "edited pair" is one
+# LinkedIn post the user rewrote before scheduling it — both halves are kept on
+# scheduled_posts (generated_body vs body). Until min-pairs of them exist the
+# prompt is byte-identical to one built with no samples at all; set min-pairs
+# very high to switch the feature off entirely.
+app.linkedin.voice-examples.min-pairs=3
+app.linkedin.voice-examples.max-examples=3
+# Rewrites longer than this are skipped as samples (not truncated — half a post
+# ends mid-sentence and reads as a style to imitate). Doesn't affect min-pairs.
+app.linkedin.voice-examples.max-sample-chars=1500
+
+# Suggestion ranking (SuggestionScorer). The first three apply to everyone;
+# the rest only take effect once User.goal is set, and each applies to exactly
+# one goal. A user with no goal ranks as if none of the goal knobs existed.
+app.suggestions.weight.confidence=0.5
+app.suggestions.weight.recency=0.3
+app.suggestions.weight.repo-momentum=0.2
+# JOB_HUNTING: distinct technologies per achievement, log-scaled to the ceiling.
+app.suggestions.weight.tech-breadth=0.3
+app.suggestions.tech-breadth.ceiling=5
+# AUDIENCE_BUILDING: added to the recency weight above.
+app.suggestions.goal.audience-building.recency-boost=0.3
+# PERFORMANCE_REVIEW: added to the confidence weight above (confidence tracks scope).
+app.suggestions.goal.performance-review.confidence-boost=0.3
+
+# Silence observation. AUDIENCE_BUILDING pushes posting harder, so it fires on
+# a smaller pile of unposted achievements than every other goal.
+app.observations.silence.min-unposted=5
+app.observations.silence.min-unposted-audience-building=2
+
+# Weekly digest email (WeeklyEmailService). Left blank here — sends simply
+# fail (logged, audited) until real SMTP credentials are supplied via the
+# environment, same as the GitHub OAuth secret above.
+spring.mail.host=${SMTP_HOST:}
+spring.mail.port=${SMTP_PORT:587}
+spring.mail.username=${SMTP_USERNAME:}
+spring.mail.password=${SMTP_PASSWORD:}
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+app.digest-email.from=${DIGEST_EMAIL_FROM:noreply@careeros.app}
+
 # Session cookie. This is the value a real (HTTPS) deployment needs — secure
 # cookies are refused by the browser over plain HTTP, so local dev needs
 # this flipped to false in your own application.properties. Lax (not

@@ -32,6 +32,7 @@ public class LinkedInPostService {
     private final LinkedInPostSoloAuthorValidator soloAuthorValidator;
     private final LLMService llmService;
     private final LinkedInPostPersistenceService linkedInPostPersistenceService;
+    private final PreferredVoiceExamples preferredVoiceExamples;
 
     private final ObjectMapper objectMapper;
 
@@ -52,9 +53,11 @@ public class LinkedInPostService {
         // honest material, and the reliability report showed the model either
         // ignoring the requirement or padding with invented detail to satisfy
         // it — see LinkedInPromptBuilder.HEADER. Period posts still enforce it.
+        List<String> voiceSamples = preferredVoiceExamples.forUser(user);
+
         LinkedInPost post = generateGuarded(
-                linkedInPromptBuilder.build(achievement),
-                violations -> linkedInPromptBuilder.buildRetry(achievement, violations),
+                linkedInPromptBuilder.build(achievement, voiceSamples),
+                violations -> linkedInPromptBuilder.buildRetry(achievement, violations, voiceSamples),
                 "achievement " + achievement.getId(), false, this::parseSinglePost);
 
         LinkedInPostEntity entity = existing.orElseGet(LinkedInPostEntity::new);
@@ -92,7 +95,7 @@ public class LinkedInPostService {
                     HttpStatus.BAD_REQUEST, "No achievements found between " + from + " and " + to);
         }
 
-        return generatePeriodPost(achievements, from, to, "period " + from + " to " + to);
+        return generatePeriodPost(user, achievements, from, to, "period " + from + " to " + to);
     }
 
     /**
@@ -122,18 +125,21 @@ public class LinkedInPostService {
         LocalDate to = achievements.get(0).getGeneratedAt().toLocalDate();
         LocalDate from = achievements.get(achievements.size() - 1).getGeneratedAt().toLocalDate();
 
-        return generatePeriodPost(achievements, from, to, "combined selection of " + distinctIds.size());
+        return generatePeriodPost(user, achievements, from, to, "combined selection of " + distinctIds.size());
     }
 
     private LinkedInPeriodPost generatePeriodPost(
-            List<AchievementEntity> achievements, LocalDate from, LocalDate to, String logLabel) {
+            User user, List<AchievementEntity> achievements, LocalDate from, LocalDate to, String logLabel) {
+
+        List<String> voiceSamples = preferredVoiceExamples.forUser(user);
 
         // checkShape=true: unlike a single achievement, a period genuinely has
         // several separate things to say, so the multi-paragraph shape rule
         // stays enforced here.
         LinkedInPost post = generateGuarded(
-                linkedInPromptBuilder.buildPeriod(achievements, from, to),
-                violations -> linkedInPromptBuilder.buildPeriodRetry(achievements, from, to, violations),
+                linkedInPromptBuilder.buildPeriod(achievements, from, to, voiceSamples),
+                violations -> linkedInPromptBuilder.buildPeriodRetry(
+                        achievements, from, to, violations, voiceSamples),
                 logLabel, true, this::parsePeriodPost);
 
         // PERIOD_OUTPUT_JSON no longer asks the model for a headline, so

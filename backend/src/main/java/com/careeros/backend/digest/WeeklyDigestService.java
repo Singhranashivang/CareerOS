@@ -50,6 +50,7 @@ public class WeeklyDigestService {
     private final AchievementGeneratorService achievementGeneratorService;
     private final RateLimiter rateLimiter;
     private final WeeklyDigestRunService weeklyDigestRunService;
+    private final WeeklyEmailService weeklyEmailService;
     private final AuditLogService auditLogService;
 
     @Async("onboardingExecutor")
@@ -132,6 +133,11 @@ public class WeeklyDigestService {
             weeklyDigestRunService.record(user, WeeklyDigestOutcome.COMPLETED, null,
                     reposSynced, commitsSynced, reposAnalyzed, achievementsCreated);
             auditLogService.record(user, AuditAction.WEEKLY_DIGEST_RUN, "weekly", AuditOutcome.SUCCESS);
+
+            // Push, not pull: every completed run gets a chance to email,
+            // independent of achievementsCreated — a stale/silent/thin
+            // signal is worth sending even when nothing new was generated.
+            weeklyEmailService.sendIfWorthSaying(user, since);
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
