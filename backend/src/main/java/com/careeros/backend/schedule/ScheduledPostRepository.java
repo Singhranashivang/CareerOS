@@ -16,6 +16,9 @@ public interface ScheduledPostRepository extends JpaRepository<ScheduledPost, Lo
 
     Optional<ScheduledPost> findByIdAndUser(Long id, User user);
 
+    /** Backs GET /api/suggestions — which achievements/repositories already have something actually published. */
+    List<ScheduledPost> findByUserAndStatus(User user, PostStatus status);
+
     /**
      * Atomically claims due posts. FOR UPDATE SKIP LOCKED is the whole point:
      * without it a second app instance reads the same rows and posts twice.

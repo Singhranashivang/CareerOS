@@ -54,6 +54,25 @@ public class AchievementPromptBuilder {
                 SHORTENED_MAX_CHANGED_FILES, SHORTENED_MAX_FEATURE_EVIDENCE, SHORTENED_MAX_DIFFS);
     }
 
+    /**
+     * Used for the one retry when AchievementTitleSpecificityValidator rejects
+     * the title — see AchievementGeneratorService.requestAndValidate.
+     * priorTitle/priorResumeBullet here are still the semantic-dedupe "prior
+     * work on this subsystem" context (unrelated to the vague title), carried
+     * through so a vague-title retry during a dedupe regeneration doesn't
+     * lose that instruction and re-describe the same prior work.
+     */
+    public String buildRetryForVagueTitle(
+            RepositoryKnowledge knowledge, Evidence evidence,
+            String priorTitle, String priorResumeBullet,
+            String vagueTitle, String reason) {
+        return build(knowledge, evidence, priorTitle, priorResumeBullet)
+                + "\n\nYour previous title was \"" + vagueTitle + "\" — " + reason + ". Rewrite the whole "
+                + "achievement from scratch. The title must name the specific file, class, method, or "
+                + "technology this change touched — not a role, category, or badge-shaped label like "
+                + "\"GitHub Committer\". Return ONLY JSON in the same shape.";
+    }
+
     private String build(
             RepositoryKnowledge knowledge,
             Evidence evidence,

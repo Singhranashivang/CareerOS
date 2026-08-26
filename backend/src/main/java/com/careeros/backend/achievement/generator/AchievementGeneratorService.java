@@ -6,10 +6,13 @@ import com.careeros.backend.achievement.engine.AchievementConfidenceCalculator;
 import com.careeros.backend.achievement.engine.AchievementConfidenceGate;
 import com.careeros.backend.achievement.engine.AchievementFabricationValidator;
 import com.careeros.backend.achievement.engine.AchievementSemanticDedupeValidator;
+import com.careeros.backend.achievement.engine.AchievementTitleSpecificityValidator;
+import com.careeros.backend.achievement.engine.DismissedAreaOverlapGate;
 import com.careeros.backend.achievement.engine.EvidenceSufficiency;
 import com.careeros.backend.achievement.engine.GroundingValidator;
 import com.careeros.backend.achievement.evidence.Evidence;
 import com.careeros.backend.achievement.evidence.EvidenceBuilder;
+import com.careeros.backend.achievement.evidence.GeneratedFilePaths;
 import com.careeros.backend.achievement.filter.CommitFilter;
 import com.careeros.backend.achievement.knowledge.RepositoryKnowledge;
 import com.careeros.backend.achievement.knowledge.RepositoryKnowledgeService;
@@ -30,9 +33,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.careeros.backend.github.dto.GithubCommitFileResponse;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 
 @Service
 @RequiredArgsConstructor
@@ -54,6 +61,8 @@ public class AchievementGeneratorService {
     private final GroundingValidator groundingValidator;
     private final AchievementFabricationValidator fabricationValidator;
     private final AchievementSemanticDedupeValidator semanticDedupeValidator;
+    private final AchievementTitleSpecificityValidator titleSpecificityValidator;
+    private final DismissedAreaOverlapGate dismissedAreaOverlapGate;
     private final EvidenceSufficiency evidenceSufficiency;
     private final AchievementPersistenceService achievementPersistenceService;
     private final AchievementRepository achievementRepository;
@@ -165,6 +174,21 @@ public class AchievementGeneratorService {
                     .insufficient(true).reason("Matches a dismissed achievement").build();
         }
 
+        // Also checked before any evidence-building or LLM work, and cheap
+        // to check here: cluster.filesBySha() is already fetched by
+        // CommitClusterer, no extra GitHub call. Unlike the exact-SHA check
+        // above, this catches a DIFFERENT cluster (different commits,
+        // possibly weeks apart) that keeps landing on the same files the
+        // user has already dismissed twice — see DismissedAreaOverlapGate.
+        Set<String> filePaths = filePaths(cluster);
+        var overlapSkipReason = dismissedAreaOverlapGate.reasonToSkip(
+                repository.getUser(), repository.getName(), filePaths);
+        if (overlapSkipReason.isPresent()) {
+            log.info("Skipping {} — {}", label, overlapSkipReason.get());
+            return AchievementOutput.builder()
+                    .insufficient(true).reason(overlapSkipReason.get()).build();
+        }
+
         Evidence evidence = evidenceBuilder.buildForCluster(repository, cluster, accessToken);
 
         var shortfall = evidenceSufficiency.shortfall(evidence);
@@ -182,6 +206,14 @@ public class AchievementGeneratorService {
         // which attempt (first pass or the "describe only what's new" retry
         // below) ends up being persisted, so this only needs computing once.
         double confidence = confidenceCalculator.calculate(evidence);
+
+        // The model's self-reported confidence was only ever useful to get
+        // this far (schema validation doesn't touch it). From here on the
+        // calculated value is the real one — every AchievementOutput this
+        // method returns from this point on must carry it, or the caller
+        // (the /analyze response) shows a different number than the one
+        // that ends up in the database.
+        output.setConfidence(confidence);
 
         if (!confidenceGate.passes(confidence)) {
             String reason = confidenceGate.reasonBelowThreshold(confidence);
@@ -241,6 +273,7 @@ public class AchievementGeneratorService {
             }
 
             output = retried;
+            output.setConfidence(confidence);
         }
 
         log.info("Generated achievement for {} with confidence {}", label, confidence);
@@ -258,6 +291,7 @@ public class AchievementGeneratorService {
                 .starResult(output.getStarResult())
                 .citedCommitShasJson(citedShasJson)
                 .technologiesJson(technologiesJson(evidence))
+                .filePathsJson(filePathsJson(filePaths))
                 .confidence(confidence)
                 .generatedAt(LocalDateTime.now())
                 .build();
@@ -278,6 +312,28 @@ public class AchievementGeneratorService {
             return objectMapper.writeValueAsString(evidence.getTechnologies());
         } catch (Exception e) {
             log.warn("Failed to serialize technologies for evidence, storing none", e);
+            return null;
+        }
+    }
+
+    /** Generated/vendored files excluded — same filter CommitClusterer's own path-overlap signal uses. */
+    private Set<String> filePaths(CommitCluster cluster) {
+        Set<String> paths = new TreeSet<>();
+        for (List<GithubCommitFileResponse> files : cluster.filesBySha().values()) {
+            for (GithubCommitFileResponse file : files) {
+                if (file.getFilename() != null && !GeneratedFilePaths.isGenerated(file.getFilename())) {
+                    paths.add(file.getFilename());
+                }
+            }
+        }
+        return paths;
+    }
+
+    private String filePathsJson(Set<String> filePaths) {
+        try {
+            return objectMapper.writeValueAsString(filePaths);
+        } catch (Exception e) {
+            log.warn("Failed to serialize file paths, storing none", e);
             return null;
         }
     }
@@ -304,10 +360,10 @@ public class AchievementGeneratorService {
 
     /**
      * requestAchievement (with its own one-retry-on-schema-drift), then the
-     * insufficient passthrough, grounding, and fabrication checks. priorTitle/
-     * priorResumeBullet, when non-null, make this the "describe only what's
-     * new relative to prior work" regeneration rather than the first attempt
-     * — see AchievementPromptBuilder.
+     * insufficient passthrough, grounding, fabrication, and title-specificity
+     * checks. priorTitle/priorResumeBullet, when non-null, make this the
+     * "describe only what's new relative to prior work" regeneration rather
+     * than the first attempt — see AchievementPromptBuilder.
      */
     private AchievementOutput requestAndValidate(
             GithubRepository repository,
@@ -327,13 +383,55 @@ public class AchievementGeneratorService {
         }
 
         if (output.isInsufficient()) {
-            String reason = output.getReason() == null || output.getReason().isBlank()
-                    ? "The evidence did not support a specific achievement"
-                    : output.getReason();
-            log.info("Model declined to claim an achievement for {}: {}", label, reason);
-            output.setReason(reason);
+            return declineWithReason(output, label);
+        }
+
+        validateGroundedAndNotFabricated(output, evidence, label);
+
+        // GroundingValidator checks title + every field together, so a
+        // garbage title next to genuinely grounded substance elsewhere still
+        // passes it — this checks the title alone, retrying once naming the
+        // problem before giving up, same as the schema-drift retry above.
+        var titleReason = titleSpecificityValidator.reasonTitleLacksSpecificity(output.getTitle(), evidence);
+        if (titleReason.isEmpty()) {
             return output;
         }
+
+        log.info("Title \"{}\" for {} lacks specificity: {} — retrying once naming the problem",
+                output.getTitle(), label, titleReason.get());
+
+        String retryPrompt = achievementPromptBuilder.buildRetryForVagueTitle(
+                knowledge, evidence, priorTitle, priorResumeBullet, output.getTitle(), titleReason.get());
+        AchievementOutput retried = callAndParse(retryPrompt, repository);
+
+        if (retried.isInsufficient()) {
+            return declineWithReason(retried, label);
+        }
+
+        validateGroundedAndNotFabricated(retried, evidence, label);
+
+        var retriedTitleReason = titleSpecificityValidator.reasonTitleLacksSpecificity(retried.getTitle(), evidence);
+        if (retriedTitleReason.isPresent()) {
+            log.warn("Title \"{}\" for {} still lacks specificity after retry: {}",
+                    retried.getTitle(), label, retriedTitleReason.get());
+            throw new RuntimeException(
+                    "the model's title still names no file, class, method, or technology after retrying: "
+                            + retriedTitleReason.get());
+        }
+
+        return retried;
+    }
+
+    private static AchievementOutput declineWithReason(AchievementOutput output, String label) {
+        String reason = output.getReason() == null || output.getReason().isBlank()
+                ? "The evidence did not support a specific achievement"
+                : output.getReason();
+        log.info("Model declined to claim an achievement for {}: {}", label, reason);
+        output.setReason(reason);
+        return output;
+    }
+
+    private void validateGroundedAndNotFabricated(AchievementOutput output, Evidence evidence, String label) {
 
         var ungroundedReason = groundingValidator.ungroundedReason(output, evidence);
         if (ungroundedReason.isPresent()) {
@@ -355,15 +453,10 @@ public class AchievementGeneratorService {
             throw new RuntimeException(
                     "the model's claim looks fabricated: " + fabricationReason.get());
         }
-
-        return output;
     }
 
     /**
-     * One request/parse/validate cycle. Throws SchemaDriftException (never a
-     * plain RuntimeException) for both "not JSON" and "JSON but not our
-     * shape" — the two things a shortened prompt might actually fix — so the
-     * caller can tell those apart from a grounding failure, which it can't.
+     * Builds the prompt (normal or shortened), then delegates to callAndParse.
      */
     private AchievementOutput requestAchievement(
             GithubRepository repository,
@@ -373,10 +466,23 @@ public class AchievementGeneratorService {
             String priorTitle,
             String priorResumeBullet
     ) {
-
         String prompt = shortened
                 ? achievementPromptBuilder.buildShortened(knowledge, evidence, priorTitle, priorResumeBullet)
                 : achievementPromptBuilder.build(knowledge, evidence, priorTitle, priorResumeBullet);
+
+        return callAndParse(prompt, repository);
+    }
+
+    /**
+     * One request/parse/validate cycle, given an already-built prompt — used
+     * both by requestAchievement (normal/shortened) and directly by the
+     * vague-title retry in requestAndValidate, which builds its own prompt.
+     * Throws SchemaDriftException (never a plain RuntimeException) for both
+     * "not JSON" and "JSON but not our shape" — the two things a shortened
+     * prompt might actually fix — so the caller can tell those apart from a
+     * grounding failure, which it can't.
+     */
+    private AchievementOutput callAndParse(String prompt, GithubRepository repository) {
 
         log.debug("Achievement prompt for {}:\n{}", repository.getFullName(), prompt);
 

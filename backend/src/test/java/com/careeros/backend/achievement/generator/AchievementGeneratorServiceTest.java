@@ -6,6 +6,8 @@ import com.careeros.backend.achievement.engine.AchievementConfidenceCalculator;
 import com.careeros.backend.achievement.engine.AchievementConfidenceGate;
 import com.careeros.backend.achievement.engine.AchievementFabricationValidator;
 import com.careeros.backend.achievement.engine.AchievementSemanticDedupeValidator;
+import com.careeros.backend.achievement.engine.AchievementTitleSpecificityValidator;
+import com.careeros.backend.achievement.engine.DismissedAreaOverlapGate;
 import com.careeros.backend.achievement.engine.EvidenceSufficiency;
 import com.careeros.backend.achievement.engine.GroundingValidator;
 import com.careeros.backend.achievement.evidence.Evidence;
@@ -47,6 +49,7 @@ class AchievementGeneratorServiceTest {
     private final LLMService llmService = mock(LLMService.class);
     private final AchievementConfidenceCalculator confidenceCalculator = mock(AchievementConfidenceCalculator.class);
     private final AchievementConfidenceGate confidenceGate = mock(AchievementConfidenceGate.class);
+    private final DismissedAreaOverlapGate dismissedAreaOverlapGate = mock(DismissedAreaOverlapGate.class);
     private final EvidenceSufficiency evidenceSufficiency = mock(EvidenceSufficiency.class);
     private final AchievementPersistenceService achievementPersistenceService = mock(AchievementPersistenceService.class);
     private final AchievementRepository achievementRepository = mock(AchievementRepository.class);
@@ -65,6 +68,8 @@ class AchievementGeneratorServiceTest {
             new GroundingValidator(), // pure logic, no reason to mock it
             new AchievementFabricationValidator(), // pure logic, no reason to mock it
             new AchievementSemanticDedupeValidator(), // pure logic, no reason to mock it
+            new AchievementTitleSpecificityValidator(), // pure logic, no reason to mock it
+            dismissedAreaOverlapGate,
             evidenceSufficiency,
             achievementPersistenceService,
             achievementRepository,
@@ -228,8 +233,106 @@ class AchievementGeneratorServiceTest {
 
         assertThat(output.isInsufficient()).isFalse();
         assertThat(output.getTitle()).isEqualTo("Spiral Search Implementation");
+        // The LLM response above self-reported 0.95; the returned output must
+        // carry the calculated 0.8 instead — the same value persisted onto
+        // the entity, not the model's own guess.
+        assertThat(output.getConfidence()).isEqualTo(0.8);
         verify(achievementPersistenceService).saveEntity(any());
         verify(analysisRecorder).record(eq(4L), eq(AnalysisOutcome.ACHIEVEMENT), any());
+    }
+
+    @Test
+    void aVagueTitleTriggersOneRetryNamingTheProblemThenSucceeds() {
+        stubUpTo(groundedEvidence(), """
+                {"title":"GitHub Committer",
+                 "resumeBullet":"Implemented a spiral search algorithm for 2D arrays",
+                 "starSituation":"x","starTask":"x","starAction":"x","starResult":"x",
+                 "confidence":0.95}
+                """);
+        when(achievementPromptBuilder.buildRetryForVagueTitle(
+                any(), any(), any(), any(), eq("GitHub Committer"), any()))
+                .thenReturn("vague-title-retry-prompt");
+        when(llmService.generate("vague-title-retry-prompt")).thenReturn("""
+                {"title":"Spiral Search Implementation",
+                 "resumeBullet":"Implemented a spiral search algorithm for 2D arrays",
+                 "starSituation":"x","starTask":"x","starAction":"x","starResult":"x",
+                 "confidence":0.95}
+                """);
+        when(confidenceCalculator.calculate(any())).thenReturn(0.8);
+        when(confidenceGate.passes(0.8)).thenReturn(true);
+        when(achievementRepository.existsByUserAndRepositoryNameAndCitedCommitShasJson(any(), any(), any()))
+                .thenReturn(false);
+
+        AchievementOutput output = service.generate(REPO, "token").get(0);
+
+        assertThat(output.isInsufficient()).isFalse();
+        assertThat(output.getTitle()).isEqualTo("Spiral Search Implementation");
+        verify(llmService).generate("prompt");
+        verify(llmService).generate("vague-title-retry-prompt");
+        verify(achievementPersistenceService).saveEntity(any());
+    }
+
+    @Test
+    void aVagueTitleThatStaysVagueAfterRetryIsRejectedAsAnError() {
+        stubUpTo(groundedEvidence(), """
+                {"title":"GitHub Committer",
+                 "resumeBullet":"Implemented a spiral search algorithm for 2D arrays",
+                 "starSituation":"x","starTask":"x","starAction":"x","starResult":"x",
+                 "confidence":0.95}
+                """);
+        when(achievementPromptBuilder.buildRetryForVagueTitle(
+                any(), any(), any(), any(), eq("GitHub Committer"), any()))
+                .thenReturn("vague-title-retry-prompt");
+        when(llmService.generate("vague-title-retry-prompt")).thenReturn("""
+                {"title":"Code Contributor",
+                 "resumeBullet":"Implemented a spiral search algorithm for 2D arrays",
+                 "starSituation":"x","starTask":"x","starAction":"x","starResult":"x",
+                 "confidence":0.95}
+                """);
+
+        assertThatThrownBy(() -> service.generate(REPO, "token"))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("still names no file, class, method, or technology");
+
+        verify(llmService).generate("prompt");
+        verify(llmService).generate("vague-title-retry-prompt");
+        verify(analysisRecorder).record(eq(4L), eq(AnalysisOutcome.ERROR), contains("still names no file"));
+        verifyNoInteractions(achievementPersistenceService);
+    }
+
+    @Test
+    void theClustersChangedFilePathsArePersistedOnTheEntityGeneratedFilesExcluded() {
+        var file = new com.careeros.backend.github.dto.GithubCommitFileResponse();
+        file.setFilename("src/main/java/SpiralSearch.java");
+        var lockfile = new com.careeros.backend.github.dto.GithubCommitFileResponse();
+        lockfile.setFilename("package-lock.json");
+        CommitCluster clusterWithFiles = new CommitCluster(
+                List.of(COMMIT), Map.of(COMMIT.getGithubCommitSha(), List.of(file, lockfile)));
+
+        when(commitClusterer.cluster(eq(REPO), any(), any())).thenReturn(List.of(clusterWithFiles));
+        when(evidenceBuilder.buildForCluster(eq(REPO), eq(clusterWithFiles), any())).thenReturn(groundedEvidence());
+        when(evidenceSufficiency.shortfall(any())).thenReturn(Optional.empty());
+        when(repositoryKnowledgeService.generate(any(), any())).thenReturn(mock(RepositoryKnowledge.class));
+        when(achievementPromptBuilder.build(any(), any(), any(), any())).thenReturn("prompt");
+        when(llmService.generate("prompt")).thenReturn("""
+                {"title":"Spiral Search Implementation",
+                 "resumeBullet":"Implemented a spiral search algorithm for 2D arrays",
+                 "starSituation":"x","starTask":"x","starAction":"x","starResult":"x",
+                 "confidence":0.95}
+                """);
+        when(confidenceCalculator.calculate(any())).thenReturn(0.8);
+        when(confidenceGate.passes(0.8)).thenReturn(true);
+        when(achievementRepository.existsByUserAndRepositoryNameAndCitedCommitShasJson(any(), any(), any()))
+                .thenReturn(false);
+
+        service.generate(REPO, "token");
+
+        var captor = org.mockito.ArgumentCaptor.forClass(
+                com.careeros.backend.achievement.record.AchievementEntity.class);
+        verify(achievementPersistenceService).saveEntity(captor.capture());
+        assertThat(captor.getValue().getFilePathsJson())
+                .contains("src/main/java/SpiralSearch.java")
+                .doesNotContain("package-lock.json");
     }
 
     @Test
@@ -279,7 +382,7 @@ class AchievementGeneratorServiceTest {
                  "confidence":0.95}
                 """,
                 """
-                {"title":"Added Bounded Recursion Depth Limit To Prevent Stack Overflow",
+                {"title":"Added Recursion Depth Limit In Java",
                  "resumeBullet":"Added a recursion depth limit to SpiralSearch.java to stop stack overflow on deeply nested grids",
                  "starSituation":"x","starTask":"x","starAction":"x","starResult":"x",
                  "confidence":0.95}
@@ -298,7 +401,10 @@ class AchievementGeneratorServiceTest {
         AchievementOutput output = service.generate(REPO, "token").get(0);
 
         assertThat(output.isInsufficient()).isFalse();
-        assertThat(output.getTitle()).isEqualTo("Added Bounded Recursion Depth Limit To Prevent Stack Overflow");
+        assertThat(output.getTitle()).isEqualTo("Added Recursion Depth Limit In Java");
+        // Confidence comes from the retried response's title/bullet path, but
+        // must still be the calculated value, not the retry's own self-reported 0.95.
+        assertThat(output.getConfidence()).isEqualTo(0.8);
         verify(llmService, times(2)).generate("prompt");
         verify(achievementPersistenceService).saveEntity(any());
     }
@@ -313,6 +419,21 @@ class AchievementGeneratorServiceTest {
 
         assertThat(output.isInsufficient()).isTrue();
         assertThat(output.getReason()).containsIgnoringCase("dismissed");
+        verifyNoInteractions(llmService, evidenceBuilder, achievementPersistenceService);
+    }
+
+    @Test
+    void aClusterSubstantiallyOverlappingRepeatedDismissalsIsSkippedWithoutCallingTheModel() {
+        when(commitClusterer.cluster(eq(REPO), any(), any())).thenReturn(List.of(CLUSTER));
+        when(achievementRepository.existsByUserAndRepositoryNameAndCitedCommitShasJsonAndDismissedTrue(
+                any(), any(), any())).thenReturn(false);
+        when(dismissedAreaOverlapGate.reasonToSkip(any(), any(), any()))
+                .thenReturn(Optional.of("substantially overlaps 2 previously dismissed clusters"));
+
+        AchievementOutput output = service.generate(REPO, "token").get(0);
+
+        assertThat(output.isInsufficient()).isTrue();
+        assertThat(output.getReason()).containsIgnoringCase("overlaps 2 previously dismissed");
         verifyNoInteractions(llmService, evidenceBuilder, achievementPersistenceService);
     }
 

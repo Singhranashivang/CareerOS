@@ -48,8 +48,19 @@ public final class BannedVocabulary {
 
         final Pattern pattern;
 
+        /**
+         * The stem with any "\w*" inflection wildcard stripped — e.g.
+         * "enhanc" for ENHANCED. Only meaningful for the verb-stem terms;
+         * for a fixed multi-word phrase like UNAUTHORIZED_ACCESS this is
+         * just the phrase itself. Lets BannedVocabularyScrubber work out
+         * which inflection (-e/-ed/-ing/-es) an individual match is, without
+         * re-deriving or duplicating these regex fragments.
+         */
+        final String stem;
+
         Term(String regex) {
             this.pattern = Pattern.compile("\\b" + regex + "\\b", Pattern.CASE_INSENSITIVE);
+            this.stem = regex.endsWith("\\w*") ? regex.substring(0, regex.length() - 3) : regex;
         }
     }
 

@@ -18,6 +18,9 @@ public interface GithubCommitRepository
 
     List<GithubCommit> findByRepository(GithubRepository repository);
 
+    /** Backs GET /api/account/export — every commit across every repository the user owns, one query. */
+    List<GithubCommit> findByRepositoryIn(List<GithubRepository> repositories);
+
     long countByRepository(GithubRepository repository);
 
     /** Every stored commit is already owner-authored — see GithubCommitService.authoredBy. */

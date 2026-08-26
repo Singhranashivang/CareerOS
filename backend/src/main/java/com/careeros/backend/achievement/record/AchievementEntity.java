@@ -75,6 +75,14 @@ public class AchievementEntity {
     @Column(name = "cited_commit_shas_json", columnDefinition = "TEXT")
     private String citedCommitShasJson;
 
+    /**
+     * The cluster's changed file paths (sorted JSON array, generated/vendored
+     * files already excluded — see GeneratedFilePaths), read back at dismiss
+     * time to record what the user rejected — see DismissedClusterSignal.
+     */
+    @Column(name = "file_paths_json", columnDefinition = "TEXT")
+    private String filePathsJson;
+
     private double confidence;
 
     private LocalDateTime generatedAt;
